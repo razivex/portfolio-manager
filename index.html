@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#071833" />
+  <title>Portfolio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d4eb8'/%3E%3Cpath d='M7 21l5-6 4 3 8-9' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="white" />
+        <path d="M7 21l5-6 4 3 8-9" fill="none" stroke="#0d4eb8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <div>
+        <strong>Portfolio</strong>
+        <span>One list</span>
+      </div>
+    </div>
+    <div class="nav-actions">
+      <div class="currency" role="radiogroup" aria-label="Currency">
+        <button type="button" role="radio" data-currency="BRL" aria-checked="true">BRL</button>
+        <button type="button" role="radio" data-currency="USD" aria-checked="false">USD</button>
+        <button type="button" role="radio" data-currency="EUR" aria-checked="false">EUR</button>
+      </div>
+      <button type="button" id="nav-add" class="nav-add" hidden>Add asset</button>
+    </div>
+  </header>
+  <main id="app"></main>
+  <dialog id="search-dialog" aria-labelledby="search-title">
+    <div class="search-card">
+      <div class="search-head">
+        <h2 id="search-title">Add asset</h2>
+        <button type="button" id="search-close" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <input id="search-input" type="search" placeholder="Search stocks, REITs, ETFs, FIIs, or crypto" autocomplete="off" spellcheck="false" />
+      <p id="search-status" class="hint"></p>
+      <ul id="search-results"></ul>
+    </div>
+  </dialog>
+  <script src="app.js"></script>
+</body>
+</html>
