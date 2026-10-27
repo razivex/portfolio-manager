@@ -3,30 +3,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#071833" />
+  <meta name="theme-color" content="#0f1419" />
   <title>Portfolio</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d4eb8'/%3E%3Cpath d='M7 21l5-6 4 3 8-9' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="nav">
-    <div class="brand">
-      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="8" fill="white" />
-        <path d="M7 21l5-6 4 3 8-9" fill="none" stroke="#0d4eb8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-      <div>
+    <div class="nav-left">
+      <div class="nav-logo" aria-hidden="true">
+        <svg class="nav-logo__icon" viewBox="0 0 24 24">
+          <path d="M4 17l5-6 3.5 2.6L20 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <div class="brand">
         <strong>Portfolio</strong>
         <span>One list</span>
       </div>
     </div>
     <div class="nav-actions">
-      <div class="currency" role="radiogroup" aria-label="Currency">
-        <button type="button" role="radio" data-currency="BRL" aria-checked="true">BRL</button>
-        <button type="button" role="radio" data-currency="USD" aria-checked="false">USD</button>
-        <button type="button" role="radio" data-currency="EUR" aria-checked="false">EUR</button>
-      </div>
       <button type="button" id="nav-add" class="nav-add" hidden>Add asset</button>
+      <div class="settings">
+        <button
+          type="button"
+          id="settings-toggle"
+          class="settings-toggle"
+          aria-label="Settings"
+          title="Settings"
+          aria-expanded="false"
+          aria-haspopup="true"
+          aria-controls="settings-menu"
+        >
+          <svg class="settings-toggle__icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.05-.7-1.65-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.6.24-1.15.57-1.65.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.05.7 1.65.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.6-.24 1.15-.57 1.65-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+          </svg>
+        </button>
+        <div id="settings-menu" class="settings-menu" hidden>
+          <p id="currency-label" class="settings-menu__label">Currency</p>
+          <div class="currency" role="radiogroup" aria-labelledby="currency-label">
+            <button type="button" role="radio" data-currency="BRL" aria-checked="true">BRL</button>
+            <button type="button" role="radio" data-currency="USD" aria-checked="false">USD</button>
+            <button type="button" role="radio" data-currency="EUR" aria-checked="false">EUR</button>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
   <main id="app"></main>

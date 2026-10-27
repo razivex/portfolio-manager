@@ -65,6 +65,34 @@ function currentCurrency() {
   return state.list ? state.list.currency : state.draftCurrency;
 }
 
+function formatAmount(value) {
+  if (!Number.isFinite(value) || value < 0) return "";
+  return value.toFixed(8).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+}
+
+function clampAmountText(raw) {
+  const text = String(raw).replace(/[^\d.,]/g, "");
+  const sep = text.search(/[.,]/);
+  if (sep === -1) return text;
+  const decimals = text.slice(sep + 1).replace(/[.,]/g, "").slice(0, 8);
+  return `${text.slice(0, sep)}${text[sep]}${decimals}`;
+}
+
+function canonicalAmount(value) {
+  if (value == null || value === "") return null;
+  const source = typeof value === "number" ? formatAmount(value) : String(value);
+  const text = clampAmountText(source);
+  if (!text || text === "." || text === ",") return null;
+  const normalized = text.replace(",", ".").replace(/\.$/, "");
+  if (!normalized) return null;
+  const [intRaw, decRaw = ""] = normalized.split(".");
+  if (!/^\d*$/.test(intRaw) || !/^\d*$/.test(decRaw)) return null;
+  let intPart = intRaw.replace(/^0+(?=\d)/, "");
+  if (!intPart) intPart = "0";
+  const decPart = decRaw.slice(0, 8).replace(/0+$/, "");
+  return decPart ? `${intPart}.${decPart}` : intPart;
+}
+
 function normalizeAsset(asset) {
   const raw = String(asset.symbol || "").toUpperCase();
   const symbol = raw.replace(/\.SA$/, "").split("-")[0];
@@ -75,6 +103,7 @@ function normalizeAsset(asset) {
     currency: asset.currency || null,
     tv: asset.tv || null,
     coinId: asset.coinId || null,
+    amount: canonicalAmount(asset.amount),
   };
   if (next.type === "crypto") {
     next.coinId = next.coinId || KNOWN_COINS[raw] || KNOWN_COINS[symbol] || null;
@@ -163,17 +192,30 @@ function convert(price, from, to) {
   return (price / fromPerUsd) * toPerUsd;
 }
 
+function amountNumber(asset) {
+  const value = Number(asset.amount);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
 function priceView(asset) {
   const quote = state.quotes.get(asset.symbol);
-  if (!quote) return { main: "…", sub: "Fetching price" };
-  if (quote.error || !Number.isFinite(quote.price)) return { main: "—", sub: "Price unavailable" };
+  const amount = amountNumber(asset);
+  if (!quote) return { position: "…", price: "…", native: "Fetching price" };
+  if (quote.error || !Number.isFinite(quote.price)) return { position: "—", price: "—", native: "Price unavailable" };
   const native = quote.currency || asset.currency;
   const display = currentCurrency();
   const converted = convert(quote.price, native, display);
-  if (converted == null) return { main: formatMoney(quote.price, native || "USD"), sub: "Rate unavailable" };
+  if (converted == null) {
+    return {
+      position: "—",
+      price: formatMoney(quote.price, native || "USD"),
+      native: "Rate unavailable",
+    };
+  }
   return {
-    main: formatMoney(converted, display),
-    sub: native && native !== display ? formatMoney(quote.price, native) : "",
+    position: formatMoney(converted * amount, display),
+    price: formatMoney(converted, display),
+    native: native && native !== display ? formatMoney(quote.price, native) : "",
   };
 }
 
@@ -197,18 +239,35 @@ function applyQuotes() {
     live.querySelector(".live-label").textContent = state.refreshError ? "Offline" : "Live";
   }
   for (const asset of state.list.assets) {
-    const main = document.querySelector(`[data-price-for="${CSS.escape(asset.symbol)}"]`);
+    const position = document.querySelector(`[data-position-for="${CSS.escape(asset.symbol)}"]`);
+    const price = document.querySelector(`[data-price-for="${CSS.escape(asset.symbol)}"]`);
     const sub = document.querySelector(`[data-native-for="${CSS.escape(asset.symbol)}"]`);
-    if (!main) continue;
+    if (!position || !price) continue;
     const view = priceView(asset);
-    if (main.textContent !== view.main) {
-      main.textContent = view.main;
-      main.classList.remove("tick");
-      void main.offsetWidth;
-      main.classList.add("tick");
+    if (position.textContent !== view.position) {
+      position.textContent = view.position;
+      position.classList.remove("tick");
+      void position.offsetWidth;
+      position.classList.add("tick");
     }
-    if (sub) sub.textContent = view.sub;
+    price.textContent = view.price;
+    if (sub) sub.textContent = view.native;
   }
+}
+
+function trashIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-12M10 11v6M14 11v6");
+  svg.append(path);
+  return svg;
 }
 
 function assetRow(asset) {
@@ -218,17 +277,53 @@ function assetRow(asset) {
   const who = el("div", "who");
   who.append(el("p", "name", asset.name), el("p", "symbol", asset.symbol));
   identity.append(who);
-  const prices = el("div", "prices");
-  const main = el("p", "price", "…");
-  main.setAttribute("data-price-for", asset.symbol);
+  const quote = el("div", "quote");
+  const price = el("p", "price", "…");
+  price.title = "Price";
+  price.setAttribute("data-price-for", asset.symbol);
   const sub = el("p", "native", "Fetching price");
   sub.setAttribute("data-native-for", asset.symbol);
-  prices.append(main, sub);
-  const remove = el("button", "remove", "Remove");
+  quote.append(price, sub);
+  const actions = el("div", "row-actions");
+  const amount = document.createElement("input");
+  amount.className = "amount";
+  amount.type = "text";
+  amount.inputMode = "decimal";
+  amount.autocomplete = "off";
+  amount.spellcheck = false;
+  amount.placeholder = "0";
+  amount.setAttribute("aria-label", `Amount of ${asset.symbol}`);
+  amount.value = asset.amount == null ? "" : String(asset.amount);
+  amount.addEventListener("input", () => {
+    const clean = clampAmountText(amount.value);
+    if (clean !== amount.value) {
+      const end = amount.selectionStart === amount.value.length;
+      const caret = amount.selectionStart;
+      amount.value = clean;
+      const pos = end ? clean.length : Math.min(caret ?? clean.length, clean.length);
+      amount.setSelectionRange(pos, pos);
+    }
+    const trailing = /[.,]$/.test(clean);
+    asset.amount = canonicalAmount(trailing ? clean.slice(0, -1) : clean);
+    save();
+    applyQuotes();
+  });
+  amount.addEventListener("blur", () => {
+    amount.value = asset.amount == null ? "" : String(asset.amount);
+  });
+  const remove = el("button", "remove");
   remove.type = "button";
   remove.setAttribute("aria-label", `Remove ${asset.symbol}`);
+  remove.title = "Remove";
+  remove.append(trashIcon());
   remove.addEventListener("click", () => removeAsset(asset.symbol));
-  row.append(identity, prices, remove);
+  actions.append(amount, remove);
+  const holding = el("div", "holding");
+  const position = el("p", "position", "…");
+  position.title = "Position";
+  position.setAttribute("data-position-for", asset.symbol);
+  holding.append(position, actions);
+  row.append(identity, quote, holding);
   return row;
 }
 
@@ -322,6 +417,7 @@ function addAsset(result) {
     currency: result.currency || null,
     tv: result.tv || null,
     coinId: result.coinId || null,
+    amount: null,
   });
   if (Number.isFinite(result.price)) {
     state.quotes.set(result.symbol, { price: result.price, currency: result.currency });
@@ -678,6 +774,32 @@ searchInput.addEventListener("input", () => {
 });
 
 const currencyGroup = document.querySelector(".currency");
+const settingsToggle = document.querySelector("#settings-toggle");
+const settingsMenu = document.querySelector("#settings-menu");
+
+function setSettingsOpen(open) {
+  settingsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  settingsToggle.classList.toggle("is-active", open);
+  settingsMenu.hidden = !open;
+  if (open) settingsMenu.querySelector('[aria-checked="true"]')?.focus();
+}
+
+settingsToggle.addEventListener("click", () => {
+  setSettingsOpen(settingsMenu.hidden);
+});
+
+document.addEventListener("click", (event) => {
+  if (settingsMenu.hidden || event.target.closest(".settings")) return;
+  setSettingsOpen(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || settingsMenu.hidden || dialog.open) return;
+  event.preventDefault();
+  setSettingsOpen(false);
+  settingsToggle.focus();
+});
+
 currencyGroup.addEventListener("keydown", (event) => {
   if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
   const buttons = [...currencyGroup.querySelectorAll("[data-currency]")];
