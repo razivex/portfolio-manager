@@ -15,6 +15,7 @@ body {
   font-family: "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
   background: #0f1419;
+  padding-bottom: 36px;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -221,7 +222,7 @@ button, input { font: inherit; }
 
 .board {
   width: min(920px, calc(100% - 32px));
-  margin: 28px auto 48px;
+  margin: 28px auto 56px;
 }
 
 .board-head {
@@ -247,33 +248,32 @@ button, input { font: inherit; }
   font-weight: 600;
 }
 
-.note { margin: 6px 0 0; color: rgba(255, 255, 255, 0.78); }
+.note {
+  margin: 4px 0 0;
+  color: rgba(231, 233, 234, 0.62);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+}
 
-.live {
-  gap: 8px;
+.asset-count { margin: 8px 0 0; }
+
+.page-footer {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 40;
   margin: 0;
-  color: white;
-  font-weight: 700;
+  padding: 8px 16px;
+  color: rgba(231, 233, 234, 0.62);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
 }
 
-.dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #b9f6ca;
-  box-shadow: 0 0 0 0 rgba(185, 246, 202, 0.7);
-  animation: pulse 1.8s infinite;
-}
-
-.live.is-down .dot {
-  background: #ffd59a;
-  animation: none;
-}
-
-@keyframes pulse {
-  70% { box-shadow: 0 0 0 8px rgba(185, 246, 202, 0); }
-}
+.page-footer p { margin: 0; }
 
 .panel {
   background: #1a2332;
@@ -356,15 +356,15 @@ button, input { font: inherit; }
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: 1.12rem;
-  color: var(--blue);
+  color: #e7e9ea;
   text-align: right;
 }
 .native { font-variant-numeric: tabular-nums; }
 .position.tick { animation: tick 0.6s ease; }
 
 @keyframes tick {
-  from { color: #14804a; }
-  to { color: var(--blue); }
+  from { color: #9aa7b8; }
+  to { color: #e7e9ea; }
 }
 
 .badge {

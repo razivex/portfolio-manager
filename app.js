@@ -1,10 +1,5 @@
 const STORAGE_KEY = "portfolio-manager:list";
 const CURRENCIES = ["BRL", "USD", "EUR"];
-const CURRENCY_LABEL = {
-  BRL: "Brazilian real",
-  USD: "US dollars",
-  EUR: "euros",
-};
 const TYPE_LABEL = {
   "us-stock": "US stock",
   "us-reit": "US REIT",
@@ -32,7 +27,6 @@ const state = {
   quotes: new Map(),
   fx: { USD: 1 },
   updatedAt: null,
-  refreshError: false,
   brokenCache: false,
   storageError: false,
   searchAbort: null,
@@ -197,47 +191,75 @@ function amountNumber(asset) {
   return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
-function priceView(asset) {
+function pricedPosition(asset) {
   const quote = state.quotes.get(asset.symbol);
   const amount = amountNumber(asset);
-  if (!quote) return { position: "…", price: "…", native: "Fetching price" };
-  if (quote.error || !Number.isFinite(quote.price)) return { position: "—", price: "—", native: "Price unavailable" };
+  if (!quote) return { status: "pending" };
+  if (quote.error || !Number.isFinite(quote.price)) return { status: "missing" };
   const native = quote.currency || asset.currency;
   const display = currentCurrency();
   const converted = convert(quote.price, native, display);
   if (converted == null) {
     return {
+      status: "missing",
       position: "—",
       price: formatMoney(quote.price, native || "USD"),
       native: "Rate unavailable",
     };
   }
+  const value = converted * amount;
   return {
-    position: formatMoney(converted * amount, display),
+    status: "ready",
+    value,
+    position: formatMoney(value, display),
     price: formatMoney(converted, display),
     native: native && native !== display ? formatMoney(quote.price, native) : "",
   };
 }
 
+function priceView(asset) {
+  const priced = pricedPosition(asset);
+  if (priced.status === "pending") return { position: "…", price: "…", native: "Fetching price" };
+  if (priced.status === "missing" && !priced.position) return { position: "—", price: "—", native: "Price unavailable" };
+  return priced;
+}
+
+function totalText() {
+  const display = currentCurrency();
+  if (state.list.assets.length === 0) return `Total · ${formatMoney(0, display)}`;
+  let sum = 0;
+  let ready = 0;
+  let pending = false;
+  for (const asset of state.list.assets) {
+    const priced = pricedPosition(asset);
+    if (priced.status === "pending") pending = true;
+    if (priced.status !== "ready") continue;
+    sum += priced.value;
+    ready += 1;
+  }
+  if (ready === 0 && pending) return "Total · …";
+  if (ready === 0) return "Total · —";
+  return `Total · ${formatMoney(sum, display)}`;
+}
+
+function formatUpdatedAt(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "Last Updated At: —";
+  const pad = (value) => String(value).padStart(2, "0");
+  const day = pad(date.getDate());
+  const month = pad(date.getMonth() + 1);
+  const year = date.getFullYear();
+  const hour = pad(date.getHours());
+  const minute = pad(date.getMinutes());
+  const second = pad(date.getSeconds());
+  return `Last Updated At: ${day}/${month}/${year} ${hour}:${minute}:${second}`;
+}
+
 function applyQuotes() {
   if (!state.list) return;
   const note = document.querySelector("#price-note");
-  if (note && state.list.assets.length === 0) {
-    note.textContent = `Prices in ${CURRENCY_LABEL[currentCurrency()]}`;
-  } else if (note) {
-    const when = state.updatedAt
-      ? new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(state.updatedAt)
-      : "waiting for prices";
-    const storage = state.storageError ? " · not saved in this browser" : "";
-    note.textContent = state.refreshError
-      ? `Could not refresh prices${storage}`
-      : `Prices in ${CURRENCY_LABEL[currentCurrency()]} · ${when}${storage}`;
-  }
-  const live = document.querySelector("#live-flag");
-  if (live) {
-    live.classList.toggle("is-down", state.refreshError);
-    live.querySelector(".live-label").textContent = state.refreshError ? "Offline" : "Live";
-  }
+  if (note) note.textContent = totalText();
+  const updated = document.querySelector("#updated-at");
+  if (updated) updated.textContent = formatUpdatedAt(state.updatedAt);
   for (const asset of state.list.assets) {
     const position = document.querySelector(`[data-position-for="${CSS.escape(asset.symbol)}"]`);
     const price = document.querySelector(`[data-price-for="${CSS.escape(asset.symbol)}"]`);
@@ -352,12 +374,6 @@ function renderList() {
   note.id = "price-note";
   titles.append(heading, note);
   head.append(titles);
-  if (state.list.assets.length > 0) {
-    const live = el("p", "live");
-    live.id = "live-flag";
-    live.append(el("span", "dot"), el("span", "live-label", "Live"));
-    head.append(live);
-  }
   const panel = el("div", "panel");
   if (state.list.assets.length === 0) {
     const empty = el("div", "empty");
@@ -371,7 +387,8 @@ function renderList() {
     state.list.assets.forEach((asset) => list.append(assetRow(asset)));
     panel.append(list);
   }
-  board.append(head, panel);
+  const assetCount = el("p", "note asset-count", `Number of Assets: ${state.list.assets.length}`);
+  board.append(head, panel, assetCount);
   main.replaceChildren(board);
   document.querySelector("#nav-add").hidden = false;
   applyQuotes();
@@ -646,11 +663,6 @@ async function refreshPrices() {
       quoteCrypto(coins, controller.signal).catch(() => null),
     ]);
     if (controller.signal.aborted || seq !== refreshSeq) return;
-    const checks = [];
-    if (us.length) checks.push(usQuotes);
-    if (br.length) checks.push(brQuotes);
-    if (coins.length) checks.push(cryptoQuotes);
-    const received = checks.filter((group) => Array.isArray(group)).length;
     let dirty = false;
     for (const quote of [...(usQuotes || []), ...(brQuotes || [])]) {
       const asset = assets.find((item) => item.tv === quote.tv);
@@ -668,12 +680,11 @@ async function refreshPrices() {
       asset.currency = "USD";
     }
     if (fx) state.fx = { ...state.fx, ...fx };
-    state.refreshError = received === 0;
-    if (!state.refreshError) state.updatedAt = new Date();
+    const arrived = [us.length ? usQuotes : null, br.length ? brQuotes : null, coins.length ? cryptoQuotes : null, fx];
+    if (arrived.some((group) => group != null)) state.updatedAt = new Date();
     if (dirty) save();
   } catch (error) {
     if (error.name === "AbortError" || controller.signal.aborted || seq !== refreshSeq) return;
-    state.refreshError = true;
   }
   if (seq === refreshSeq) applyQuotes();
 }
