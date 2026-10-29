@@ -1,4 +1,5 @@
 const STORAGE_KEY = "portfolio-manager:list";
+const QUOTES_KEY = "portfolio-manager:quotes";
 const CURRENCIES = ["BRL", "USD", "EUR"];
 const TYPE_LABEL = {
   "us-stock": "US stock",
@@ -145,6 +146,66 @@ function save() {
   }
 }
 
+function loadQuotes() {
+  let raw;
+  try {
+    raw = localStorage.getItem(QUOTES_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!data || data.version !== 1 || !Array.isArray(data.quotes)) return;
+  const quotes = new Map();
+  for (const entry of data.quotes) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    const [key, quote] = entry;
+    if (typeof key !== "string" || !key.includes(":") || !quote || !Number.isFinite(quote.price)) continue;
+    const currency = typeof quote.currency === "string" && quote.currency ? quote.currency : null;
+    quotes.set(key, { price: quote.price, currency });
+  }
+  state.quotes = quotes;
+  const fx = { USD: 1 };
+  if (data.fx && typeof data.fx === "object") {
+    for (const code of ["BRL", "EUR"]) {
+      const rate = Number(data.fx[code]);
+      if (Number.isFinite(rate) && rate > 0) fx[code] = rate;
+    }
+  }
+  state.fx = fx;
+  if (typeof data.updatedAt === "string") {
+    const date = new Date(data.updatedAt);
+    if (!Number.isNaN(date.getTime())) state.updatedAt = date;
+  }
+  if (!state.list) return;
+  const keep = new Set(state.list.assets.map((asset) => assetKey(asset)));
+  for (const key of [...state.quotes.keys()]) {
+    if (!keep.has(key)) state.quotes.delete(key);
+  }
+}
+
+function saveQuotes() {
+  const fx = { USD: 1 };
+  if (Number.isFinite(state.fx.BRL) && state.fx.BRL > 0) fx.BRL = state.fx.BRL;
+  if (Number.isFinite(state.fx.EUR) && state.fx.EUR > 0) fx.EUR = state.fx.EUR;
+  const payload = {
+    version: 1,
+    updatedAt: state.updatedAt instanceof Date && !Number.isNaN(state.updatedAt.getTime()) ? state.updatedAt.toISOString() : null,
+    fx,
+    quotes: [...state.quotes.entries()].filter((entry) => entry[1] && Number.isFinite(entry[1].price)),
+  };
+  try {
+    localStorage.setItem(QUOTES_KEY, JSON.stringify(payload));
+  } catch {
+    state.storageError = true;
+  }
+}
+
 function syncCurrency() {
   const selected = currentCurrency();
   document.querySelectorAll("[data-currency]").forEach((button) => {
@@ -192,7 +253,7 @@ function amountNumber(asset) {
 }
 
 function pricedPosition(asset) {
-  const quote = state.quotes.get(asset.symbol);
+  const quote = state.quotes.get(assetKey(asset));
   const amount = amountNumber(asset);
   if (!quote) return { status: "pending" };
   if (quote.error || !Number.isFinite(quote.price)) return { status: "missing" };
@@ -261,9 +322,10 @@ function applyQuotes() {
   const updated = document.querySelector("#updated-at");
   if (updated) updated.textContent = formatUpdatedAt(state.updatedAt);
   for (const asset of state.list.assets) {
-    const position = document.querySelector(`[data-position-for="${CSS.escape(asset.symbol)}"]`);
-    const price = document.querySelector(`[data-price-for="${CSS.escape(asset.symbol)}"]`);
-    const sub = document.querySelector(`[data-native-for="${CSS.escape(asset.symbol)}"]`);
+    const key = CSS.escape(assetKey(asset));
+    const position = document.querySelector(`[data-position-for="${key}"]`);
+    const price = document.querySelector(`[data-price-for="${key}"]`);
+    const sub = document.querySelector(`[data-native-for="${key}"]`);
     if (!position || !price) continue;
     const view = priceView(asset);
     if (position.textContent !== view.position) {
@@ -293,6 +355,7 @@ function trashIcon() {
 }
 
 function assetRow(asset) {
+  const view = priceView(asset);
   const row = el("li", "asset");
   const identity = el("div", "identity");
   identity.append(el("span", `badge badge-${asset.type}`, TYPE_LABEL[asset.type]));
@@ -300,11 +363,11 @@ function assetRow(asset) {
   who.append(el("p", "name", asset.name), el("p", "symbol", asset.symbol));
   identity.append(who);
   const quote = el("div", "quote");
-  const price = el("p", "price", "…");
+  const price = el("p", "price", view.price);
   price.title = "Price";
-  price.setAttribute("data-price-for", asset.symbol);
-  const sub = el("p", "native", "Fetching price");
-  sub.setAttribute("data-native-for", asset.symbol);
+  price.setAttribute("data-price-for", assetKey(asset));
+  const sub = el("p", "native", view.native);
+  sub.setAttribute("data-native-for", assetKey(asset));
   quote.append(price, sub);
   const actions = el("div", "row-actions");
   const amount = document.createElement("input");
@@ -338,12 +401,12 @@ function assetRow(asset) {
   remove.setAttribute("aria-label", `Remove ${asset.symbol}`);
   remove.title = "Remove";
   remove.append(trashIcon());
-  remove.addEventListener("click", () => removeAsset(asset.symbol));
+  remove.addEventListener("click", () => removeAsset(asset));
   actions.append(amount, remove);
   const holding = el("div", "holding");
-  const position = el("p", "position", "…");
+  const position = el("p", "position", view.position);
   position.title = "Position";
-  position.setAttribute("data-position-for", asset.symbol);
+  position.setAttribute("data-position-for", assetKey(asset));
   holding.append(position, actions);
   row.append(identity, quote, holding);
   return row;
@@ -368,8 +431,7 @@ function renderList() {
   const board = el("section", "board");
   const head = el("div", "board-head");
   const titles = el("div");
-  const heading = el("h1", null, "Assets");
-  heading.append(el("span", "count", String(state.list.assets.length)));
+  const heading = el("h1", null, "My Portfolio");
   const note = el("p", "note");
   note.id = "price-note";
   titles.append(heading, note);
@@ -418,10 +480,13 @@ function createList() {
   openSearch();
 }
 
+function assetKey(asset) {
+  const ticker = String(asset.symbol || "").toUpperCase();
+  return `${asset.type || "asset"}:${ticker}`;
+}
+
 function sameAsset(asset, result) {
-  if (asset.coinId && result.coinId) return asset.coinId === result.coinId;
-  if (asset.tv && result.tv) return asset.tv === result.tv;
-  return asset.symbol === result.symbol;
+  return assetKey(asset) === assetKey(result);
 }
 
 function addAsset(result) {
@@ -437,18 +502,21 @@ function addAsset(result) {
     amount: null,
   });
   if (Number.isFinite(result.price)) {
-    state.quotes.set(result.symbol, { price: result.price, currency: result.currency });
+    state.quotes.set(assetKey(result), { price: result.price, currency: result.currency });
   }
   save();
+  saveQuotes();
   render();
   refreshPrices();
 }
 
-function removeAsset(symbol) {
+function removeAsset(asset) {
   if (!state.list) return;
-  state.list.assets = state.list.assets.filter((asset) => asset.symbol !== symbol);
-  state.quotes.delete(symbol);
+  const key = assetKey(asset);
+  state.list.assets = state.list.assets.filter((item) => assetKey(item) !== key);
+  state.quotes.delete(key);
   save();
+  saveQuotes();
   render();
 }
 
@@ -667,7 +735,7 @@ async function refreshPrices() {
     for (const quote of [...(usQuotes || []), ...(brQuotes || [])]) {
       const asset = assets.find((item) => item.tv === quote.tv);
       if (!asset || !Number.isFinite(quote.price)) continue;
-      state.quotes.set(asset.symbol, { price: quote.price, currency: quote.currency || asset.currency });
+      state.quotes.set(assetKey(asset), { price: quote.price, currency: quote.currency || asset.currency });
       if (quote.currency && asset.currency !== quote.currency) {
         asset.currency = quote.currency;
         dirty = true;
@@ -676,13 +744,14 @@ async function refreshPrices() {
     for (const quote of cryptoQuotes || []) {
       const asset = assets.find((item) => item.coinId === quote.coinId);
       if (!asset) continue;
-      state.quotes.set(asset.symbol, { price: quote.price, currency: "USD" });
+      state.quotes.set(assetKey(asset), { price: quote.price, currency: "USD" });
       asset.currency = "USD";
     }
     if (fx) state.fx = { ...state.fx, ...fx };
     const arrived = [us.length ? usQuotes : null, br.length ? brQuotes : null, coins.length ? cryptoQuotes : null, fx];
     if (arrived.some((group) => group != null)) state.updatedAt = new Date();
     if (dirty) save();
+    saveQuotes();
   } catch (error) {
     if (error.name === "AbortError" || controller.signal.aborted || seq !== refreshSeq) return;
   }
@@ -830,5 +899,6 @@ document.addEventListener("visibilitychange", () => {
 });
 
 state.list = loadList();
+loadQuotes();
 render();
 if (state.list) ensurePolling();
