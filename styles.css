@@ -219,19 +219,35 @@ button, input { font: inherit; }
 }
 
 .board-head {
+  position: relative;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 14px;
-  color: white;
+  align-items: center;
+  margin: 0 0 12px;
+  padding: 16px 20px;
+  background: #1a2332;
+  border: 1px solid #2d3a4d;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  color: #e7e9ea;
 }
 
-.board-head h1 {
+.board-head h1,
+.total {
   margin: 0;
-  font-size: 1.7rem;
-  font-weight: 600;
-  letter-spacing: -0.03em;
+  color: #e7e9ea;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.total {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  pointer-events: none;
 }
 
 .note {
@@ -316,6 +332,7 @@ button, input { font: inherit; }
 .name {
   min-width: 0;
   color: #e7e9ea;
+  font-size: 1rem;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -491,6 +508,13 @@ dialog::backdrop { background: rgba(4, 16, 40, 0.62); }
 
 @media (max-width: 720px) {
   .nav { padding: 0 12px 0 4px; }
+  .board-head {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .board-head h1 { text-align: center; }
+  .total { position: static; width: 100%; transform: none; }
   .asset {
     grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas:

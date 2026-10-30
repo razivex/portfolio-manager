@@ -430,12 +430,10 @@ function renderList() {
   const main = document.querySelector("#app");
   const board = el("section", "board");
   const head = el("div", "board-head");
-  const titles = el("div");
   const heading = el("h1", null, "My Portfolio");
-  const note = el("p", "note");
+  const note = el("p", "total");
   note.id = "price-note";
-  titles.append(heading, note);
-  head.append(titles);
+  head.append(heading, note);
   const panel = el("div", "panel");
   if (state.list.assets.length === 0) {
     const empty = el("div", "empty");
