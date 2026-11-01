@@ -219,9 +219,9 @@ button, input { font: inherit; }
 }
 
 .board-head {
-  position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   margin: 0 0 12px;
   padding: 16px 20px;
   background: #1a2332;
@@ -231,23 +231,57 @@ button, input { font: inherit; }
   color: #e7e9ea;
 }
 
-.board-head h1,
 .total {
   margin: 0;
   color: #e7e9ea;
   font-size: 1rem;
   font-weight: 700;
   line-height: 1.2;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.35s ease;
 }
 
-.total {
-  position: absolute;
-  left: 20px;
-  right: 20px;
-  top: 50%;
-  transform: translateY(-50%);
-  text-align: center;
-  pointer-events: none;
+.total.tick-up { color: #3ddc84; }
+.total.tick-down { color: #ff6b7a; }
+
+.total-odometer {
+  --digit-h: 20px;
+  display: inline-flex;
+  align-items: flex-start;
+  height: var(--digit-h);
+  white-space: nowrap;
+}
+
+.total-odometer__digit {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  width: 1ch;
+  height: var(--digit-h);
+}
+
+.total-odometer__reel {
+  display: block;
+  transition: transform 1.1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.total-odometer__num,
+.total-odometer__symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--digit-h);
+  line-height: 1;
+}
+
+.total-odometer__symbol {
+  flex: none;
+  white-space: pre;
+}
+
+.total-odometer__symbol[data-gap] {
+  width: 0.28em;
 }
 
 .note {
@@ -508,13 +542,6 @@ dialog::backdrop { background: rgba(4, 16, 40, 0.62); }
 
 @media (max-width: 720px) {
   .nav { padding: 0 12px 0 4px; }
-  .board-head {
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-  }
-  .board-head h1 { text-align: center; }
-  .total { position: static; width: 100%; transform: none; }
   .asset {
     grid-template-columns: minmax(0, 1fr) auto auto;
     grid-template-areas:

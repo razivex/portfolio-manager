@@ -285,9 +285,9 @@ function priceView(asset) {
   return priced;
 }
 
-function totalText() {
+function totalView() {
   const display = currentCurrency();
-  if (state.list.assets.length === 0) return `Total · ${formatMoney(0, display)}`;
+  if (state.list.assets.length === 0) return { text: `Total · ${formatMoney(0, display)}`, value: 0 };
   let sum = 0;
   let ready = 0;
   let pending = false;
@@ -298,9 +298,9 @@ function totalText() {
     sum += priced.value;
     ready += 1;
   }
-  if (ready === 0 && pending) return "Total · …";
-  if (ready === 0) return "Total · —";
-  return `Total · ${formatMoney(sum, display)}`;
+  if (ready === 0 && pending) return { text: "Total · …", value: null };
+  if (ready === 0) return { text: "Total · —", value: null };
+  return { text: `Total · ${formatMoney(sum, display)}`, value: sum };
 }
 
 function formatUpdatedAt(date) {
@@ -315,10 +315,189 @@ function formatUpdatedAt(date) {
   return `Last Updated At: ${day}/${month}/${year} ${hour}:${minute}:${second}`;
 }
 
+const TOTAL_REEL_MIDDLE = 10;
+const TOTAL_DIGIT_MIN_MS = 950;
+const TOTAL_DIGIT_PER_STEP_MS = 110;
+const TOTAL_DIGIT_MAX_MS = 1700;
+const TOTAL_DIGIT_STAGGER_MS = 45;
+const TOTAL_TICK_MS = TOTAL_DIGIT_MAX_MS + TOTAL_DIGIT_STAGGER_MS * 6;
+const totalTickTimers = new WeakMap();
+const totalDigitTimers = new WeakMap();
+
+function flashTotal(el, direction) {
+  el.classList.remove("tick-up", "tick-down");
+  if (direction === 0) return;
+  void el.offsetWidth;
+  el.classList.add(direction > 0 ? "tick-up" : "tick-down");
+  const previous = totalTickTimers.get(el);
+  if (previous) clearTimeout(previous);
+  const timer = setTimeout(() => {
+    el.classList.remove("tick-up", "tick-down");
+    totalTickTimers.delete(el);
+  }, TOTAL_TICK_MS + 80);
+  totalTickTimers.set(el, timer);
+}
+
+function totalOdometer(el) {
+  let root = el.querySelector(":scope > .total-odometer");
+  if (root) return root;
+  el.textContent = "";
+  root = document.createElement("span");
+  root.className = "total-odometer";
+  el.append(root);
+  return root;
+}
+
+function totalDigit() {
+  const digit = document.createElement("span");
+  digit.className = "total-odometer__digit";
+  digit.setAttribute("aria-hidden", "true");
+  const reel = document.createElement("span");
+  reel.className = "total-odometer__reel";
+  for (let copy = 0; copy < 3; copy += 1) {
+    for (let value = 0; value <= 9; value += 1) {
+      const num = document.createElement("span");
+      num.className = "total-odometer__num";
+      num.textContent = String(value);
+      reel.append(num);
+    }
+  }
+  digit.append(reel);
+  return digit;
+}
+
+function totalStride(reel) {
+  const sample = reel.querySelector(".total-odometer__num");
+  const height = sample ? Number.parseFloat(getComputedStyle(sample).height) : NaN;
+  return Number.isFinite(height) && height > 0 ? height : 20;
+}
+
+function snapTotalReel(reel, index, stride = totalStride(reel)) {
+  reel.style.transition = "none";
+  reel.style.transform = `translate3d(0, ${-index * stride}px, 0)`;
+  void reel.offsetWidth;
+  reel.style.transition = "";
+}
+
+function setTotalDigit(digitEl, nextDigit, { instant = false, direction = 0, delayMs = 0 } = {}) {
+  const reel = digitEl.querySelector(".total-odometer__reel");
+  if (!reel) return;
+  const digit = Number(nextDigit);
+  if (!Number.isFinite(digit)) return;
+  const previous = digitEl.dataset.digit === undefined ? NaN : Number(digitEl.dataset.digit);
+  const middle = TOTAL_REEL_MIDDLE + digit;
+  const pending = totalDigitTimers.get(digitEl);
+  if (pending) {
+    clearTimeout(pending);
+    totalDigitTimers.delete(digitEl);
+  }
+  if (instant || direction === 0 || !Number.isFinite(previous) || previous === digit) {
+    snapTotalReel(reel, middle);
+    digitEl.dataset.digit = String(digit);
+    return;
+  }
+  const steps = direction > 0 ? (digit - previous + 10) % 10 : (previous - digit + 10) % 10;
+  if (steps === 0) {
+    snapTotalReel(reel, middle);
+    digitEl.dataset.digit = String(digit);
+    return;
+  }
+  const stride = totalStride(reel);
+  const start = TOTAL_REEL_MIDDLE + previous;
+  const end = direction > 0 ? start + steps : start - steps;
+  const durationMs = Math.min(TOTAL_DIGIT_MAX_MS, TOTAL_DIGIT_MIN_MS + (steps - 1) * TOTAL_DIGIT_PER_STEP_MS);
+  snapTotalReel(reel, start, stride);
+  reel.style.transition = `transform ${durationMs}ms cubic-bezier(0.16, 1, 0.3, 1) ${delayMs}ms`;
+  reel.style.transform = `translate3d(0, ${-end * stride}px, 0)`;
+  digitEl.dataset.digit = String(digit);
+  const token = `${digit}:${end}:${durationMs}:${delayMs}`;
+  digitEl.dataset.animToken = token;
+  const timer = setTimeout(() => {
+    totalDigitTimers.delete(digitEl);
+    if (digitEl.dataset.animToken !== token || digitEl.dataset.digit !== String(digit)) return;
+    snapTotalReel(reel, middle);
+  }, durationMs + delayMs + 40);
+  totalDigitTimers.set(digitEl, timer);
+}
+
+function paintTotalSymbol(symbol, char) {
+  symbol.textContent = char;
+  if (/\s/u.test(char)) symbol.dataset.gap = "1";
+  else delete symbol.dataset.gap;
+}
+
+function renderTotalOdometer(el, text, { instant = false, direction = 0 } = {}) {
+  const root = totalOdometer(el);
+  const chars = Array.from(text);
+  while (root.children.length > chars.length) root.lastElementChild.remove();
+  const digitIndexes = [];
+  chars.forEach((char, index) => {
+    if (char >= "0" && char <= "9") digitIndexes.push(index);
+  });
+  chars.forEach((char, index) => {
+    const isDigit = char >= "0" && char <= "9";
+    let node = root.children[index] || null;
+    if (isDigit) {
+      if (!node || !node.classList.contains("total-odometer__digit")) {
+        const digit = totalDigit();
+        if (node) root.replaceChild(digit, node);
+        else root.append(digit);
+        setTotalDigit(digit, char, { instant: true });
+        return;
+      }
+      const same = node.dataset.digit === char;
+      const fromRight = digitIndexes.length - 1 - digitIndexes.indexOf(index);
+      setTotalDigit(node, char, {
+        instant: instant || node.dataset.digit === undefined || same,
+        direction: instant || same ? 0 : direction,
+        delayMs: instant || same ? 0 : fromRight * TOTAL_DIGIT_STAGGER_MS,
+      });
+      return;
+    }
+    if (!node || !node.classList.contains("total-odometer__symbol")) {
+      const symbol = document.createElement("span");
+      symbol.className = "total-odometer__symbol";
+      symbol.setAttribute("aria-hidden", "true");
+      paintTotalSymbol(symbol, char);
+      if (node) root.replaceChild(symbol, node);
+      else root.append(symbol);
+      return;
+    }
+    paintTotalSymbol(node, char);
+  });
+  el.setAttribute("aria-label", text);
+}
+
+function paintTotal(el, view) {
+  const display = currentCurrency();
+  const nextText = view.text;
+  const nextNum = Number.isFinite(view.value) ? view.value : NaN;
+  const prevNum = el.dataset.totalValue === undefined || el.dataset.totalValue === "" ? NaN : Number(el.dataset.totalValue);
+  const prevText = el.dataset.displayText;
+  const sameValue = Number.isFinite(prevNum) && Number.isFinite(nextNum) && prevNum === nextNum;
+  let direction = 0;
+  if (Number.isFinite(prevNum) && Number.isFinite(nextNum)) direction = Math.sign(nextNum - prevNum);
+  const instant = prevText === undefined
+    || el.dataset.currency !== display
+    || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    || !Number.isFinite(nextNum)
+    || !Number.isFinite(prevNum)
+    || sameValue
+    || direction === 0;
+  if (prevText !== nextText) {
+    renderTotalOdometer(el, nextText, { instant, direction: instant ? 0 : direction });
+    if (!instant && direction !== 0) flashTotal(el, direction);
+  }
+  el.dataset.displayText = nextText;
+  el.dataset.currency = display;
+  if (Number.isFinite(nextNum)) el.dataset.totalValue = String(nextNum);
+  else delete el.dataset.totalValue;
+}
+
 function applyQuotes() {
   if (!state.list) return;
   const note = document.querySelector("#price-note");
-  if (note) note.textContent = totalText();
+  if (note) paintTotal(note, totalView());
   const updated = document.querySelector("#updated-at");
   if (updated) updated.textContent = formatUpdatedAt(state.updatedAt);
   for (const asset of state.list.assets) {
@@ -430,10 +609,9 @@ function renderList() {
   const main = document.querySelector("#app");
   const board = el("section", "board");
   const head = el("div", "board-head");
-  const heading = el("h1", null, "My Portfolio");
   const note = el("p", "total");
   note.id = "price-note";
-  head.append(heading, note);
+  head.append(note);
   const panel = el("div", "panel");
   if (state.list.assets.length === 0) {
     const empty = el("div", "empty");
