@@ -73,6 +73,36 @@ function clampAmountText(raw) {
   return `${text.slice(0, sep)}${text[sep]}${decimals}`;
 }
 
+function clampGradeText(raw) {
+  let text = String(raw).replace(/[^\d.,]/g, "");
+  const sepIndex = text.search(/[.,]/);
+  let intRaw = sepIndex === -1 ? text : text.slice(0, sepIndex);
+  const sep = sepIndex === -1 ? "" : text[sepIndex];
+  const decRaw = sepIndex === -1 ? "" : text.slice(sepIndex + 1).replace(/[.,]/g, "");
+  intRaw = intRaw.replace(/^0+(?=\d)/, "");
+  if (intRaw.length > 2) intRaw = intRaw.slice(0, 2);
+  if (intRaw.length === 2 && intRaw !== "10") intRaw = intRaw.slice(0, 1);
+  if (intRaw === "10") return "10";
+  if (!sep) return intRaw;
+  return `${intRaw || "0"}${sep}${decRaw.slice(0, 2)}`;
+}
+
+function canonicalGrade(value) {
+  if (value == null || value === "") return null;
+  const source = typeof value === "number" ? String(value) : String(value);
+  const text = clampGradeText(source);
+  if (!text || text === "." || text === ",") return null;
+  const normalized = text.replace(",", ".").replace(/\.$/, "");
+  if (!normalized) return null;
+  const number = Number(normalized);
+  if (!Number.isFinite(number) || number < 0 || number > 10) return null;
+  const [intRaw, decRaw = ""] = normalized.split(".");
+  const intPart = intRaw.replace(/^0+(?=\d)/, "") || "0";
+  if (intPart === "10") return "10";
+  const decPart = decRaw.slice(0, 2).replace(/0+$/, "");
+  return decPart ? `${intPart}.${decPart}` : intPart;
+}
+
 function canonicalAmount(value) {
   if (value == null || value === "") return null;
   const source = typeof value === "number" ? formatAmount(value) : String(value);
@@ -99,6 +129,7 @@ function normalizeAsset(asset) {
     tv: asset.tv || null,
     coinId: asset.coinId || null,
     amount: canonicalAmount(asset.amount),
+    grade: canonicalGrade(asset.grade),
   };
   if (next.type === "crypto") {
     next.coinId = next.coinId || KNOWN_COINS[raw] || KNOWN_COINS[symbol] || null;
@@ -575,13 +606,39 @@ function assetRow(asset) {
   amount.addEventListener("blur", () => {
     amount.value = asset.amount == null ? "" : String(asset.amount);
   });
+  const grade = document.createElement("input");
+  grade.className = "grade";
+  grade.type = "text";
+  grade.inputMode = "decimal";
+  grade.autocomplete = "off";
+  grade.spellcheck = false;
+  grade.placeholder = "0";
+  grade.title = "Grade from 0 to 10";
+  grade.setAttribute("aria-label", `Grade of ${asset.symbol}`);
+  grade.value = asset.grade == null ? "" : String(asset.grade);
+  grade.addEventListener("input", () => {
+    const clean = clampGradeText(grade.value);
+    if (clean !== grade.value) {
+      const end = grade.selectionStart === grade.value.length;
+      const caret = grade.selectionStart;
+      grade.value = clean;
+      const pos = end ? clean.length : Math.min(caret ?? clean.length, clean.length);
+      grade.setSelectionRange(pos, pos);
+    }
+    const trailing = /[.,]$/.test(clean);
+    asset.grade = canonicalGrade(trailing ? clean.slice(0, -1) : clean);
+    save();
+  });
+  grade.addEventListener("blur", () => {
+    grade.value = asset.grade == null ? "" : String(asset.grade);
+  });
   const remove = el("button", "remove");
   remove.type = "button";
   remove.setAttribute("aria-label", `Remove ${asset.symbol}`);
   remove.title = "Remove";
   remove.append(trashIcon());
   remove.addEventListener("click", () => removeAsset(asset));
-  actions.append(amount, remove);
+  actions.append(amount, grade, remove);
   const holding = el("div", "holding");
   const position = el("p", "position", view.position);
   position.title = "Position";
@@ -676,6 +733,7 @@ function addAsset(result) {
     tv: result.tv || null,
     coinId: result.coinId || null,
     amount: null,
+    grade: null,
   });
   if (Number.isFinite(result.price)) {
     state.quotes.set(assetKey(result), { price: result.price, currency: result.currency });

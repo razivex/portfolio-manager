@@ -108,6 +108,7 @@ button, input { font: inherit; }
 .icon-btn:focus-visible,
 .settings-toggle:focus-visible,
 .amount:focus-visible,
+.grade:focus-visible,
 .remove:focus-visible,
 .result:focus-visible {
   outline: 3px solid #9cc4ff;
@@ -421,10 +422,8 @@ button, input { font: inherit; }
 .badge-br-etf { background: #e7f0ff; color: #1849a9; }
 .badge-crypto { background: #ecebff; color: #4338ca; }
 
-.amount {
-  width: 5.75rem;
+.amount, .grade {
   height: 32px;
-  padding: 0 6px;
   border: 1px solid #2d3a4d;
   border-radius: 8px;
   background: #0f1419;
@@ -437,9 +436,13 @@ button, input { font: inherit; }
   font-variant-numeric: tabular-nums;
 }
 
-.amount::placeholder { color: #7f8fa3; }
+.amount { width: 5.75rem; padding: 0 6px; }
 
-.amount:focus {
+.grade { width: 3.25rem; padding: 0 4px; }
+
+.amount::placeholder, .grade::placeholder { color: #7f8fa3; }
+
+.amount:focus, .grade:focus {
   outline: 2px solid #1d6fe8;
   border-color: transparent;
 }
@@ -543,11 +546,11 @@ dialog::backdrop { background: rgba(4, 16, 40, 0.62); }
 @media (max-width: 720px) {
   .nav { padding: 0 12px 0 4px; }
   .asset {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     grid-template-areas:
-      "identity identity identity"
-      "quote quote quote"
-      "position amount trash";
+      "identity identity identity identity"
+      "quote quote quote quote"
+      "position amount grade trash";
     gap: 6px 8px;
   }
   .identity { grid-area: identity; }
@@ -555,6 +558,7 @@ dialog::backdrop { background: rgba(4, 16, 40, 0.62); }
   .holding, .row-actions { display: contents; }
   .position { grid-area: position; }
   .amount { grid-area: amount; width: 5.25rem; justify-self: end; }
+  .grade { grid-area: grade; width: 2.9rem; justify-self: end; }
   .remove { grid-area: trash; }
 }
 
