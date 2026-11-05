@@ -215,7 +215,7 @@ button, input { font: inherit; }
 .add-inline { font-size: 1rem; padding: 12px 22px; }
 
 .board {
-  width: min(920px, calc(100% - 32px));
+  width: min(1104px, calc(100% - 32px));
   margin: 28px auto 56px;
 }
 
@@ -406,12 +406,33 @@ button, input { font: inherit; }
 }
 
 .badge {
+  position: relative;
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
   border-radius: 999px;
   padding: 5px 8px;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.01em;
+}
+
+.badge-sizer {
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+.badge-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .badge-us-stock { background: #e7f0ff; color: #0d4eb8; }
@@ -431,7 +452,7 @@ button, input { font: inherit; }
   -webkit-text-fill-color: #e7e9ea;
   caret-color: #e7e9ea;
   color-scheme: dark;
-  text-align: right;
+  text-align: center;
   font-size: 0.86rem;
   font-variant-numeric: tabular-nums;
 }

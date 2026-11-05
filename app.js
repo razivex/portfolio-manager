@@ -49,6 +49,14 @@ function el(tag, className, text) {
   return node;
 }
 
+function typeBadge(type) {
+  const badge = el("span", `badge badge-${type}`);
+  const sizer = el("span", "badge-sizer", TYPE_LABEL["us-stock"]);
+  sizer.setAttribute("aria-hidden", "true");
+  badge.append(el("span", "badge-label", TYPE_LABEL[type]), sizer);
+  return badge;
+}
+
 function fold(value) {
   return String(value || "")
     .normalize("NFD")
@@ -564,13 +572,25 @@ function trashIcon() {
   return svg;
 }
 
+function shortName(name) {
+  const words = String(name || "").trim().split(/\s+/).filter(Boolean).slice(0, 2);
+  if (!words.length) return "";
+  const last = words.length - 1;
+  words[last] = (words[last].match(/^[\p{L}\p{N}]+/u) || [""])[0];
+  return words.filter(Boolean).join(" ");
+}
+
 function assetRow(asset) {
   const view = priceView(asset);
   const row = el("li", "asset");
   const identity = el("div", "identity");
-  identity.append(el("span", `badge badge-${asset.type}`, TYPE_LABEL[asset.type]));
+  identity.append(typeBadge(asset.type));
   const who = el("div", "who");
-  who.append(el("p", "name", asset.name), el("p", "symbol", asset.symbol));
+  const fullName = String(asset.name || "");
+  const visibleName = shortName(fullName);
+  const name = el("p", "name", visibleName);
+  if (visibleName !== fullName.trim()) name.title = fullName;
+  who.append(name, el("p", "symbol", asset.symbol));
   identity.append(who);
   const quote = el("div", "quote");
   const price = el("p", "price", view.price);
@@ -1013,7 +1033,7 @@ function paintResults(results) {
     button.type = "button";
     const added = state.list.assets.some((asset) => sameAsset(asset, result));
     button.disabled = added;
-    button.append(el("span", `badge badge-${result.type}`, TYPE_LABEL[result.type]));
+    button.append(typeBadge(result.type));
     const who = el("span", "who");
     who.append(
       el("span", "name", result.name),
