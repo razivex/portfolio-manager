@@ -22,30 +22,31 @@
     </div>
     <div class="nav-actions">
       <button type="button" id="nav-add" class="nav-add" hidden>Add asset</button>
-      <div class="settings">
-        <button
-          type="button"
-          id="settings-toggle"
-          class="settings-toggle"
-          aria-label="Settings"
-          title="Settings"
-          aria-expanded="false"
-          aria-haspopup="true"
-          aria-controls="settings-menu"
-        >
-          <svg class="settings-toggle__icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.05-.7-1.65-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.6.24-1.15.57-1.65.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.05.7 1.65.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.6-.24 1.15-.57 1.65-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-          </svg>
-        </button>
-        <div id="settings-menu" class="settings-menu" hidden>
-          <p id="currency-label" class="settings-menu__label">Currency</p>
-          <div class="currency" role="radiogroup" aria-labelledby="currency-label">
-            <button type="button" role="radio" data-currency="BRL" aria-checked="true">BRL</button>
-            <button type="button" role="radio" data-currency="USD" aria-checked="false">USD</button>
-            <button type="button" role="radio" data-currency="EUR" aria-checked="false">EUR</button>
-          </div>
-        </div>
-      </div>
+      <button type="button" id="values-toggle" class="values-toggle" aria-pressed="false" aria-label="Hide values" title="Hide values">
+        <svg class="values-toggle__icon values-toggle__open" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+        </svg>
+        <svg class="values-toggle__icon values-toggle__closed" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-6.5 0-10-8-10-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M1 1l22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        id="settings-toggle"
+        class="settings-toggle"
+        aria-label="Settings"
+        title="Settings"
+        aria-pressed="false"
+        aria-expanded="false"
+        aria-haspopup="dialog"
+        aria-controls="settingsOverlay"
+      >
+        <svg class="settings-toggle__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.05-.7-1.65-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.6.24-1.15.57-1.65.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.05.7 1.65.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.6-.24 1.15-.57 1.65-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+        </svg>
+      </button>
     </div>
   </header>
   <main id="app"></main>
@@ -63,6 +64,76 @@
       <ul id="search-results"></ul>
     </div>
   </dialog>
+  <div id="settingsOverlay" class="settings-overlay" hidden>
+    <div
+      id="settingsView"
+      class="settings-view"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settingsTitle"
+      tabindex="-1"
+    >
+      <div class="settings-view__header">
+        <h1 id="settingsTitle">Settings</h1>
+        <button id="settingsCloseBtn" class="settings-view__close" type="button" aria-label="Close">×</button>
+      </div>
+      <div id="settingsMenu" class="settings-menu" aria-label="Settings">
+        <nav class="settings-menu__nav" role="tablist" aria-orientation="vertical">
+          <button
+            id="settingsNavCurrency"
+            class="settings-menu__nav-item is-active"
+            type="button"
+            role="tab"
+            data-settings-panel="currency"
+            aria-selected="true"
+            aria-controls="settingsPanelCurrency"
+          >
+            <span class="settings-menu__label">Currency</span>
+            <span id="settingsCurrencyValue" class="settings-menu__value">BRL</span>
+          </button>
+        </nav>
+        <div class="settings-menu__panels">
+          <section
+            id="settingsPanelCurrency"
+            class="settings-menu__panel"
+            role="tabpanel"
+            aria-labelledby="settingsNavCurrency"
+          >
+            <div id="currencyMenu" class="notifications-menu currency-menu" role="radiogroup" aria-label="Currency">
+              <button
+                class="notifications-menu__option currency-menu__option is-selected"
+                type="button"
+                data-currency="BRL"
+                role="radio"
+                aria-checked="true"
+                aria-label="Brazilian Real"
+              >
+                <span class="notifications-menu__header">
+                  <span class="notifications-menu__label">Brazilian Real</span>
+                  <span class="settings-choice__symbol currency-menu__symbol" aria-hidden="true">R$</span>
+                </span>
+                <span class="notifications-menu__desc">BRL</span>
+              </button>
+              <button
+                class="notifications-menu__option currency-menu__option"
+                type="button"
+                data-currency="USD"
+                role="radio"
+                aria-checked="false"
+                aria-label="US Dollar"
+              >
+                <span class="notifications-menu__header">
+                  <span class="notifications-menu__label">US Dollar</span>
+                  <span class="settings-choice__symbol currency-menu__symbol" aria-hidden="true">$</span>
+                </span>
+                <span class="notifications-menu__desc">USD</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 const STORAGE_KEY = "portfolio-manager:list";
 const QUOTES_KEY = "portfolio-manager:quotes";
-const CURRENCIES = ["BRL", "USD", "EUR"];
+const VALUES_KEY = "portfolio-manager:values-hidden";
+const CURRENCIES = ["BRL", "USD"];
 const TYPE_LABEL = {
   "us-stock": "US stock",
   "us-reit": "US REIT",
@@ -31,6 +32,7 @@ const state = {
   brokenCache: false,
   storageError: false,
   searchAbort: null,
+  valuesHidden: false,
 };
 
 const dialog = document.querySelector("#search-dialog");
@@ -164,10 +166,18 @@ function loadList() {
       state.brokenCache = true;
       return null;
     }
-    if (!CURRENCIES.includes(data.currency)) data.currency = "BRL";
+    const currencyOk = CURRENCIES.includes(data.currency);
+    if (!currencyOk) data.currency = "BRL";
     data.assets = data.assets
       .filter((asset) => asset && asset.symbol && TYPE_LABEL[asset.type])
       .map(normalizeAsset);
+    if (!currencyOk) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch {
+        state.storageError = true;
+      }
+    }
     return data;
   } catch {
     state.brokenCache = true;
@@ -211,7 +221,7 @@ function loadQuotes() {
   state.quotes = quotes;
   const fx = { USD: 1 };
   if (data.fx && typeof data.fx === "object") {
-    for (const code of ["BRL", "EUR"]) {
+    for (const code of ["BRL"]) {
       const rate = Number(data.fx[code]);
       if (Number.isFinite(rate) && rate > 0) fx[code] = rate;
     }
@@ -231,7 +241,6 @@ function loadQuotes() {
 function saveQuotes() {
   const fx = { USD: 1 };
   if (Number.isFinite(state.fx.BRL) && state.fx.BRL > 0) fx.BRL = state.fx.BRL;
-  if (Number.isFinite(state.fx.EUR) && state.fx.EUR > 0) fx.EUR = state.fx.EUR;
   const payload = {
     version: 1,
     updatedAt: state.updatedAt instanceof Date && !Number.isNaN(state.updatedAt.getTime()) ? state.updatedAt.toISOString() : null,
@@ -247,15 +256,19 @@ function saveQuotes() {
 
 function syncCurrency() {
   const selected = currentCurrency();
-  document.querySelectorAll("[data-currency]").forEach((button) => {
-    button.setAttribute("aria-checked", button.dataset.currency === selected ? "true" : "false");
+  const value = document.querySelector("#settingsCurrencyValue");
+  if (value) value.textContent = selected;
+  document.querySelectorAll(".currency-menu__option").forEach((option) => {
+    const isSelected = option.dataset.currency === selected;
+    option.disabled = false;
+    option.classList.toggle("is-selected", isSelected);
+    option.setAttribute("aria-checked", String(isSelected));
   });
 }
 
 function setCurrency(code) {
-  if (!CURRENCIES.includes(code)) return;
+  if (!CURRENCIES.includes(code) || code === currentCurrency()) return;
   if (state.list) {
-    if (state.list.currency === code) return;
     state.list.currency = code;
     save();
   } else {
@@ -268,7 +281,7 @@ function setCurrency(code) {
 function formatMoney(value, currency) {
   if (!Number.isFinite(value)) return "—";
   const digits = value >= 1 ? 2 : value >= 0.01 ? 4 : 6;
-  const locale = currency === "BRL" ? "pt-BR" : currency === "EUR" ? "de-DE" : "en-US";
+  const locale = currency === "BRL" ? "pt-BR" : "en-US";
   return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
@@ -504,7 +517,7 @@ function renderTotalOdometer(el, text, { instant = false, direction = 0 } = {}) 
     }
     paintTotalSymbol(node, char);
   });
-  el.setAttribute("aria-label", text);
+  el.setAttribute("aria-label", state.valuesHidden ? "Total hidden" : text);
 }
 
 function paintTotal(el, view) {
@@ -941,13 +954,12 @@ async function quoteListed(market, tickers, signal) {
 
 async function quoteFx(signal) {
   const rows = await scan("forex", {
-    symbols: { tickers: ["FX_IDC:USDBRL", "FX_IDC:USDEUR"], query: { types: [] } },
+    symbols: { tickers: ["FX_IDC:USDBRL"], query: { types: [] } },
     columns: ["close"],
   }, signal);
   const fx = { USD: 1 };
   for (const row of rows) {
     if (row.s === "FX_IDC:USDBRL" && Number.isFinite(row.d[0])) fx.BRL = row.d[0];
-    if (row.s === "FX_IDC:USDEUR" && Number.isFinite(row.d[0])) fx.EUR = row.d[0];
   }
   return fx;
 }
@@ -1107,45 +1119,197 @@ searchInput.addEventListener("input", () => {
   searchTimer = window.setTimeout(() => runSearch(query), 350);
 });
 
-const currencyGroup = document.querySelector(".currency");
+const valuesToggle = document.querySelector("#values-toggle");
 const settingsToggle = document.querySelector("#settings-toggle");
-const settingsMenu = document.querySelector("#settings-menu");
+const settingsOverlay = document.querySelector("#settingsOverlay");
+const settingsView = document.querySelector("#settingsView");
+const settingsCloseBtn = document.querySelector("#settingsCloseBtn");
+const currencyMenu = document.querySelector("#currencyMenu");
 
-function setSettingsOpen(open) {
-  settingsToggle.setAttribute("aria-expanded", open ? "true" : "false");
-  settingsToggle.classList.toggle("is-active", open);
-  settingsMenu.hidden = !open;
-  if (open) settingsMenu.querySelector('[aria-checked="true"]')?.focus();
+function isSettingsOpen() {
+  return Boolean(settingsOverlay && !settingsOverlay.hidden);
 }
 
-settingsToggle.addEventListener("click", () => {
-  setSettingsOpen(settingsMenu.hidden);
+function updateSettingsToggleState(open) {
+  settingsToggle.classList.toggle("is-active", open);
+  settingsToggle.setAttribute("aria-pressed", String(open));
+  settingsToggle.setAttribute("aria-expanded", String(open));
+}
+
+function applySettingsPopupSize() {
+  if (!settingsView) return;
+  const narrow = window.matchMedia("(max-width: 640px)").matches;
+  const pad = narrow ? 32 : 48;
+  const maxW = Math.max(0, window.innerWidth - pad);
+  const maxH = Math.max(0, window.innerHeight - pad);
+  const cardWidth = narrow ? window.innerWidth : Math.min(720, window.innerWidth);
+  const cardHeight = narrow ? 1014 : 566;
+  const width = Math.min(cardWidth, maxW);
+  const height = Math.min(cardHeight, maxH);
+  settingsView.style.width = `${width}px`;
+  settingsView.style.height = `${height}px`;
+  settingsView.style.maxWidth = `${width}px`;
+  settingsView.style.maxHeight = `${height}px`;
+}
+
+function closeSettingsMenu(options = {}) {
+  if (!isSettingsOpen()) return;
+  settingsOverlay.hidden = true;
+  document.body.classList.remove("settings-open");
+  updateSettingsToggleState(false);
+  if (options.restoreFocus !== false) settingsToggle.focus();
+}
+
+function openSettingsMenu() {
+  applySettingsPopupSize();
+  settingsOverlay.hidden = false;
+  document.body.classList.add("settings-open");
+  updateSettingsToggleState(true);
+  syncCurrency();
+  settingsView.focus();
+  requestAnimationFrame(() => {
+    if (isSettingsOpen()) applySettingsPopupSize();
+  });
+}
+
+function bindMenuChoice(menu, optionSelector, applyValue) {
+  if (!menu) return;
+  let startX = 0;
+  let startY = 0;
+  let tracking = false;
+  let moved = false;
+  let ignoreClick = false;
+  let ignoreClickTimer = 0;
+
+  const optionFromEvent = (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const option = target?.closest(optionSelector);
+    if (!option || !menu.contains(option) || option.disabled) return null;
+    return option;
+  };
+
+  menu.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    tracking = true;
+    moved = false;
+    startX = event.clientX;
+    startY = event.clientY;
+  });
+
+  menu.addEventListener("pointermove", (event) => {
+    if (!tracking) return;
+    if (Math.abs(event.clientX - startX) > 10 || Math.abs(event.clientY - startY) > 10) moved = true;
+  });
+
+  menu.addEventListener("pointercancel", () => {
+    tracking = false;
+    moved = true;
+  });
+
+  menu.addEventListener("pointerup", (event) => {
+    if (!tracking || event.pointerType === "mouse") {
+      tracking = false;
+      return;
+    }
+    const wasMoved = moved;
+    tracking = false;
+    if (wasMoved) return;
+    const option = optionFromEvent(event);
+    if (!option) return;
+    ignoreClick = true;
+    if (ignoreClickTimer) window.clearTimeout(ignoreClickTimer);
+    ignoreClickTimer = window.setTimeout(() => {
+      ignoreClick = false;
+      ignoreClickTimer = 0;
+    }, 500);
+    event.stopPropagation();
+    applyValue(option);
+  });
+
+  menu.addEventListener("click", (event) => {
+    if (ignoreClick) {
+      ignoreClick = false;
+      if (ignoreClickTimer) {
+        window.clearTimeout(ignoreClickTimer);
+        ignoreClickTimer = 0;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    const option = optionFromEvent(event);
+    if (!option) return;
+    event.stopPropagation();
+    applyValue(option);
+  });
+}
+
+function loadValuesHidden() {
+  try {
+    return localStorage.getItem(VALUES_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function applyValueVisibility() {
+  document.body.classList.toggle("values-hidden", state.valuesHidden);
+  const hidden = state.valuesHidden;
+  valuesToggle.setAttribute("aria-pressed", hidden ? "true" : "false");
+  valuesToggle.setAttribute("aria-label", hidden ? "Show values" : "Hide values");
+  valuesToggle.title = hidden ? "Show values" : "Hide values";
+  const total = document.querySelector("#price-note");
+  if (total) total.setAttribute("aria-label", hidden ? "Total hidden" : total.dataset.displayText || "Total");
+  try {
+    localStorage.setItem(VALUES_KEY, hidden ? "1" : "0");
+  } catch {
+    state.storageError = true;
+  }
+}
+
+valuesToggle.addEventListener("click", () => {
+  state.valuesHidden = !state.valuesHidden;
+  applyValueVisibility();
 });
 
-document.addEventListener("click", (event) => {
-  if (settingsMenu.hidden || event.target.closest(".settings")) return;
-  setSettingsOpen(false);
+settingsToggle.addEventListener("click", () => {
+  if (isSettingsOpen()) closeSettingsMenu();
+  else openSettingsMenu();
+});
+
+document.querySelectorAll(".settings-menu__nav-item").forEach((item) => {
+  item.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (item.disabled) return;
+    syncCurrency();
+  });
+});
+
+bindMenuChoice(currencyMenu, ".currency-menu__option", (option) => {
+  setCurrency(option.getAttribute("data-currency"));
+});
+
+settingsCloseBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  closeSettingsMenu();
+});
+
+settingsOverlay.addEventListener("click", (event) => {
+  if (event.target === settingsOverlay) closeSettingsMenu();
+});
+
+settingsView.addEventListener("click", (event) => {
+  event.stopPropagation();
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape" || settingsMenu.hidden || dialog.open) return;
+  if (event.key !== "Escape" || !isSettingsOpen() || dialog.open) return;
   event.preventDefault();
-  setSettingsOpen(false);
-  settingsToggle.focus();
+  closeSettingsMenu();
 });
 
-currencyGroup.addEventListener("keydown", (event) => {
-  if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-  const buttons = [...currencyGroup.querySelectorAll("[data-currency]")];
-  const index = buttons.findIndex((button) => button.getAttribute("aria-checked") === "true");
-  event.preventDefault();
-  const shift = event.key === "ArrowRight" ? 1 : -1;
-  const next = buttons[(index + shift + buttons.length) % buttons.length];
-  next.click();
-  next.focus();
-});
-document.querySelectorAll("[data-currency]").forEach((button) => {
-  button.addEventListener("click", () => setCurrency(button.dataset.currency));
+window.addEventListener("resize", () => {
+  if (isSettingsOpen()) applySettingsPopupSize();
 });
 
 document.addEventListener("visibilitychange", () => {
@@ -1153,6 +1317,9 @@ document.addEventListener("visibilitychange", () => {
 });
 
 state.list = loadList();
+state.valuesHidden = loadValuesHidden();
+applyValueVisibility();
 loadQuotes();
+syncCurrency();
 render();
 if (state.list) ensurePolling();
