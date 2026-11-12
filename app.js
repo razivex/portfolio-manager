@@ -22,6 +22,11 @@ const KNOWN_COINS = {
   DOGE: "dogecoin",
 };
 const POLL_MS = 15000;
+const ALLOCATION_IDS = ["us-stock", "reit", "br-stock", "crypto"];
+const SETTINGS_PANELS = {
+  currency: "settingsPanelCurrency",
+  allocation: "settingsPanelAllocation",
+};
 
 const state = {
   list: null,
@@ -33,6 +38,8 @@ const state = {
   storageError: false,
   searchAbort: null,
   valuesHidden: false,
+  draftAllocation: { "us-stock": 0, reit: 0, "br-stock": 0, crypto: 0 },
+  settingsPanel: "currency",
 };
 
 const dialog = document.querySelector("#search-dialog");
@@ -68,6 +75,70 @@ function fold(value) {
 
 function currentCurrency() {
   return state.list ? state.list.currency : state.draftCurrency;
+}
+
+function defaultAllocation() {
+  return { "us-stock": 0, reit: 0, "br-stock": 0, crypto: 0 };
+}
+
+function allocationCents(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.round(Math.min(100, Math.max(0, number)) * 100);
+}
+
+function canonicalAllocation(raw) {
+  const next = defaultAllocation();
+  if (!raw || typeof raw !== "object") return next;
+  const cents = ALLOCATION_IDS.map((id) => allocationCents(raw[id]));
+  let sum = cents.reduce((total, value) => total + value, 0);
+  if (sum > 10000) {
+    const scaled = cents.map((value) => Math.floor((value * 10000) / sum));
+    let leftover = 10000 - scaled.reduce((total, value) => total + value, 0);
+    const order = scaled.map((value, index) => index).sort((a, b) => scaled[b] - scaled[a]);
+    let cursor = 0;
+    while (leftover > 0) {
+      scaled[order[cursor % order.length]] += 1;
+      leftover -= 1;
+      cursor += 1;
+    }
+    scaled.forEach((value, index) => {
+      cents[index] = value;
+    });
+  }
+  ALLOCATION_IDS.forEach((id, index) => {
+    next[id] = cents[index] / 100;
+  });
+  return next;
+}
+
+function formatAllocation(value) {
+  return `${value.toFixed(2)}%`;
+}
+
+function clampAllocationText(raw) {
+  let text = String(raw).replace(/%/g, "").replace(/[^\d.,]/g, "");
+  const sepIndex = text.search(/[.,]/);
+  let intRaw = sepIndex === -1 ? text : text.slice(0, sepIndex);
+  const sep = sepIndex === -1 ? "" : text[sepIndex];
+  const decRaw = sepIndex === -1 ? "" : text.slice(sepIndex + 1).replace(/[.,]/g, "");
+  intRaw = intRaw.replace(/^0+(?=\d)/, "");
+  if (intRaw.length > 3) intRaw = intRaw.slice(0, 3);
+  if (Number(intRaw) > 100) intRaw = "100";
+  if (intRaw === "100") return "100";
+  if (!sep) return intRaw;
+  return `${intRaw || "0"}${sep}${decRaw.slice(0, 2)}`;
+}
+
+function readAllocationInput(raw) {
+  const text = clampAllocationText(raw).replace(",", ".");
+  if (!text || text === ".") return 0;
+  const number = Number(text);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function currentAllocation() {
+  return state.list ? state.list.allocation : state.draftAllocation;
 }
 
 function formatAmount(value) {
@@ -168,6 +239,7 @@ function loadList() {
     }
     const currencyOk = CURRENCIES.includes(data.currency);
     if (!currencyOk) data.currency = "BRL";
+    data.allocation = canonicalAllocation(data.allocation);
     data.assets = data.assets
       .filter((asset) => asset && asset.symbol && TYPE_LABEL[asset.type])
       .map(normalizeAsset);
@@ -276,6 +348,43 @@ function setCurrency(code) {
   }
   syncCurrency();
   applyQuotes();
+}
+
+function syncAllocation() {
+  const current = currentAllocation();
+  const totalCents = ALLOCATION_IDS.reduce((sum, id) => sum + allocationCents(current[id]), 0);
+  document.querySelectorAll(".allocation-menu__slider").forEach((slider) => {
+    const value = current[slider.dataset.allocation];
+    slider.max = "100";
+    slider.value = value.toFixed(2);
+    slider.style.setProperty("--fill", `${value}%`);
+    slider.setAttribute("aria-valuemax", "100");
+    slider.setAttribute("aria-valuenow", value.toFixed(2));
+    slider.setAttribute("aria-valuetext", formatAllocation(value));
+    const readout = slider.closest(".allocation-menu__option")?.querySelector(".allocation-menu__value");
+    if (readout && document.activeElement !== readout) readout.value = formatAllocation(value);
+  });
+  const total = totalCents / 100;
+  const fill = document.querySelector("#allocationTotalFill");
+  const readout = document.querySelector("#allocationTotalValue");
+  const meter = document.querySelector("#allocationTotalMeter");
+  if (fill) fill.style.width = `${total}%`;
+  if (readout) readout.textContent = formatAllocation(total);
+  if (meter) {
+    meter.setAttribute("aria-valuenow", total.toFixed(2));
+    meter.setAttribute("aria-valuetext", formatAllocation(total));
+  }
+}
+
+function setAllocation(id, raw) {
+  if (!ALLOCATION_IDS.includes(id)) return;
+  const target = currentAllocation();
+  const others = ALLOCATION_IDS.reduce((sum, key) => (key === id ? sum : sum + allocationCents(target[key])), 0);
+  const value = Math.min(allocationCents(raw), Math.max(0, 10000 - others)) / 100;
+  const changed = target[id] !== value;
+  target[id] = value;
+  if (changed && state.list) save();
+  syncAllocation();
 }
 
 function formatMoney(value, currency) {
@@ -737,6 +846,7 @@ function createList() {
     version: 1,
     createdAt: new Date().toISOString(),
     currency: state.draftCurrency || "BRL",
+    allocation: canonicalAllocation(state.draftAllocation),
     assets: [],
   };
   state.brokenCache = false;
@@ -1160,12 +1270,28 @@ function closeSettingsMenu(options = {}) {
   if (options.restoreFocus !== false) settingsToggle.focus();
 }
 
+function setSettingsPanel(panel) {
+  if (!SETTINGS_PANELS[panel]) return;
+  state.settingsPanel = panel;
+  document.querySelectorAll(".settings-menu__nav-item").forEach((item) => {
+    const active = item.dataset.settingsPanel === panel;
+    item.classList.toggle("is-active", active);
+    item.setAttribute("aria-selected", String(active));
+  });
+  Object.entries(SETTINGS_PANELS).forEach(([name, id]) => {
+    const section = document.querySelector(`#${id}`);
+    if (section) section.hidden = name !== panel;
+  });
+  syncCurrency();
+  syncAllocation();
+}
+
 function openSettingsMenu() {
   applySettingsPopupSize();
   settingsOverlay.hidden = false;
   document.body.classList.add("settings-open");
   updateSettingsToggleState(true);
-  syncCurrency();
+  setSettingsPanel(state.settingsPanel);
   settingsView.focus();
   requestAnimationFrame(() => {
     if (isSettingsOpen()) applySettingsPopupSize();
@@ -1281,7 +1407,48 @@ document.querySelectorAll(".settings-menu__nav-item").forEach((item) => {
   item.addEventListener("click", (event) => {
     event.stopPropagation();
     if (item.disabled) return;
-    syncCurrency();
+    setSettingsPanel(item.dataset.settingsPanel);
+  });
+});
+
+document.querySelectorAll(".allocation-menu__slider").forEach((slider) => {
+  slider.addEventListener("input", () => setAllocation(slider.dataset.allocation, slider.value));
+});
+
+document.querySelectorAll(".allocation-menu__option").forEach((option) => {
+  const field = option.querySelector(".allocation-menu__value");
+  const slider = option.querySelector(".allocation-menu__slider");
+  const label = option.querySelector(".notifications-menu__label")?.textContent || "Allocation";
+  field.dataset.allocation = slider.dataset.allocation;
+  field.setAttribute("aria-label", `${label} percentage`);
+  field.title = "Type a percentage";
+  field.addEventListener("focus", () => {
+    field.value = currentAllocation()[field.dataset.allocation].toFixed(2);
+    field.select();
+  });
+  field.addEventListener("input", () => {
+    const clean = clampAllocationText(field.value);
+    if (clean === field.value) return;
+    const end = field.selectionStart === field.value.length;
+    const caret = field.selectionStart;
+    field.value = clean;
+    const pos = end ? clean.length : Math.min(caret ?? clean.length, clean.length);
+    field.setSelectionRange(pos, pos);
+  });
+  field.addEventListener("blur", () => {
+    setAllocation(field.dataset.allocation, readAllocationInput(field.value));
+    field.value = formatAllocation(currentAllocation()[field.dataset.allocation]);
+  });
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      field.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      field.value = formatAllocation(currentAllocation()[field.dataset.allocation]);
+      field.blur();
+    }
   });
 });
 
@@ -1321,5 +1488,6 @@ state.valuesHidden = loadValuesHidden();
 applyValueVisibility();
 loadQuotes();
 syncCurrency();
+syncAllocation();
 render();
 if (state.list) ensurePolling();

@@ -91,6 +91,17 @@
             <span class="settings-menu__label">Currency</span>
             <span id="settingsCurrencyValue" class="settings-menu__value">BRL</span>
           </button>
+          <button
+            id="settingsNavAllocation"
+            class="settings-menu__nav-item"
+            type="button"
+            role="tab"
+            data-settings-panel="allocation"
+            aria-selected="false"
+            aria-controls="settingsPanelAllocation"
+          >
+            <span class="settings-menu__label">Allocation</span>
+          </button>
         </nav>
         <div class="settings-menu__panels">
           <section
@@ -128,6 +139,53 @@
                 </span>
                 <span class="notifications-menu__desc">USD</span>
               </button>
+            </div>
+          </section>
+          <section
+            id="settingsPanelAllocation"
+            class="settings-menu__panel"
+            role="tabpanel"
+            aria-labelledby="settingsNavAllocation"
+            hidden
+          >
+            <div id="allocationMenu" class="notifications-menu allocation-menu" role="group" aria-label="Allocation">
+              <div class="notifications-menu__option allocation-menu__option">
+                <span class="notifications-menu__header">
+                  <span class="notifications-menu__label">US Stocks</span>
+                  <input class="allocation-menu__value" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="0.00%" aria-label="Percentage" />
+                </span>
+                <input class="allocation-menu__slider" type="range" min="0" max="100" step="0.01" value="0" data-allocation="us-stock" aria-label="US Stocks allocation" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0.00" aria-valuetext="0.00%" />
+              </div>
+              <div class="notifications-menu__option allocation-menu__option">
+                <span class="notifications-menu__header">
+                  <span class="notifications-menu__label">REITs</span>
+                  <input class="allocation-menu__value" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="0.00%" aria-label="Percentage" />
+                </span>
+                <input class="allocation-menu__slider" type="range" min="0" max="100" step="0.01" value="0" data-allocation="reit" aria-label="REITs allocation" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0.00" aria-valuetext="0.00%" />
+              </div>
+              <div class="notifications-menu__option allocation-menu__option">
+                <span class="notifications-menu__header">
+                  <span class="notifications-menu__label">BR Stocks</span>
+                  <input class="allocation-menu__value" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="0.00%" aria-label="Percentage" />
+                </span>
+                <input class="allocation-menu__slider" type="range" min="0" max="100" step="0.01" value="0" data-allocation="br-stock" aria-label="BR Stocks allocation" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0.00" aria-valuetext="0.00%" />
+              </div>
+              <div class="notifications-menu__option allocation-menu__option">
+                <span class="notifications-menu__header">
+                  <span class="notifications-menu__label">Crypto</span>
+                  <input class="allocation-menu__value" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="0.00%" aria-label="Percentage" />
+                </span>
+                <input class="allocation-menu__slider" type="range" min="0" max="100" step="0.01" value="0" data-allocation="crypto" aria-label="Crypto allocation" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0.00" aria-valuetext="0.00%" />
+              </div>
+              <div class="allocation-total">
+                <span class="notifications-menu__header">
+                  <span class="notifications-menu__label">Allocated</span>
+                  <span id="allocationTotalValue" class="allocation-menu__value">0.00%</span>
+                </span>
+                <div id="allocationTotalMeter" class="allocation-total__track" role="meter" aria-label="Allocated" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0.00" aria-valuetext="0.00%">
+                  <div id="allocationTotalFill" class="allocation-total__fill"></div>
+                </div>
+              </div>
             </div>
           </section>
         </div>
