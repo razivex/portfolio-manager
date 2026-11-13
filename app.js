@@ -22,7 +22,16 @@ const KNOWN_COINS = {
   DOGE: "dogecoin",
 };
 const POLL_MS = 15000;
-const ALLOCATION_IDS = ["us-stock", "reit", "br-stock", "crypto"];
+const ALLOCATION_IDS = ["us-stock", "us-etf", "us-reit", "br-stock", "br-etf", "br-fii", "crypto"];
+const CLASS_BY_TYPE = {
+  "us-stock": "us-stock",
+  "us-etf": "us-etf",
+  "us-reit": "us-reit",
+  "br-stock": "br-stock",
+  "br-etf": "br-etf",
+  "br-fii": "br-fii",
+  crypto: "crypto",
+};
 const SETTINGS_PANELS = {
   currency: "settingsPanelCurrency",
   allocation: "settingsPanelAllocation",
@@ -38,7 +47,7 @@ const state = {
   storageError: false,
   searchAbort: null,
   valuesHidden: false,
-  draftAllocation: { "us-stock": 0, reit: 0, "br-stock": 0, crypto: 0 },
+  draftAllocation: defaultAllocation(),
   settingsPanel: "currency",
 };
 
@@ -78,7 +87,11 @@ function currentCurrency() {
 }
 
 function defaultAllocation() {
-  return { "us-stock": 0, reit: 0, "br-stock": 0, crypto: 0 };
+  const next = {};
+  ALLOCATION_IDS.forEach((id) => {
+    next[id] = 0;
+  });
+  return next;
 }
 
 function allocationCents(value) {
@@ -90,7 +103,9 @@ function allocationCents(value) {
 function canonicalAllocation(raw) {
   const next = defaultAllocation();
   if (!raw || typeof raw !== "object") return next;
-  const cents = ALLOCATION_IDS.map((id) => allocationCents(raw[id]));
+  const source = { ...raw };
+  if (source["us-reit"] == null && source.reit != null) source["us-reit"] = source.reit;
+  const cents = ALLOCATION_IDS.map((id) => allocationCents(source[id]));
   let sum = cents.reduce((total, value) => total + value, 0);
   if (sum > 10000) {
     const scaled = cents.map((value) => Math.floor((value * 10000) / sum));
@@ -239,11 +254,13 @@ function loadList() {
     }
     const currencyOk = CURRENCIES.includes(data.currency);
     if (!currencyOk) data.currency = "BRL";
-    data.allocation = canonicalAllocation(data.allocation);
+    const savedAllocation = data.allocation;
+    const migratedReit = !!(savedAllocation && typeof savedAllocation === "object" && savedAllocation["us-reit"] == null && savedAllocation.reit != null);
+    data.allocation = canonicalAllocation(savedAllocation);
     data.assets = data.assets
       .filter((asset) => asset && asset.symbol && TYPE_LABEL[asset.type])
       .map(normalizeAsset);
-    if (!currencyOk) {
+    if (!currencyOk || migratedReit) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       } catch {
@@ -385,6 +402,7 @@ function setAllocation(id, raw) {
   target[id] = value;
   if (changed && state.list) save();
   syncAllocation();
+  syncPriority();
 }
 
 function formatMoney(value, currency) {
@@ -444,6 +462,117 @@ function priceView(asset) {
   if (priced.status === "pending") return { position: "…", price: "…", native: "Fetching price" };
   if (priced.status === "missing" && !priced.position) return { position: "—", price: "—", native: "Price unavailable" };
   return priced;
+}
+
+function assetScore(asset) {
+  if (asset.grade == null || asset.grade === "") return null;
+  const number = Number(asset.grade);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return number;
+}
+
+function marketValue(asset) {
+  const priced = pricedPosition(asset);
+  if (priced.status !== "ready" || !Number.isFinite(priced.value) || priced.value <= 0) return 0;
+  return priced.value;
+}
+
+function priorityForHoldings(holdings, targets) {
+  const rows = holdings.map((row) => {
+    const value = Number(row.value);
+    let score = null;
+    if (row.score != null && row.score !== "") {
+      const number = Number(row.score);
+      score = Number.isFinite(number) && number > 0 ? number : 0;
+    }
+    return {
+      id: row.id,
+      classId: row.classId || null,
+      score,
+      value: Number.isFinite(value) && value > 0 ? value : 0,
+    };
+  });
+  const portfolioValue = rows.reduce((sum, row) => sum + row.value, 0);
+  const grouped = new Map();
+  rows.forEach((row) => {
+    if (!row.classId) return;
+    if (!grouped.has(row.classId)) grouped.set(row.classId, []);
+    grouped.get(row.classId).push(row);
+  });
+  const byId = new Map();
+  grouped.forEach((members, classId) => {
+    const targetPercent = Number(targets && targets[classId]);
+    const targetFraction = Number.isFinite(targetPercent) && targetPercent > 0 ? targetPercent / 100 : 0;
+    const positive = members.filter((row) => row.score > 0);
+    const weights = positive.length
+      ? positive.map((row) => ({ row, weight: row.score }))
+      : members.filter((row) => row.score == null).map((row) => ({ row, weight: 1 }));
+    const weightSum = weights.reduce((sum, item) => sum + item.weight, 0);
+    const open = targetFraction > 0 && weightSum > 0;
+    const classValue = members.reduce((sum, row) => sum + row.value, 0);
+    const classRatio = open ? (portfolioValue > 0 ? classValue / portfolioValue : 0) / targetFraction : null;
+    const weightById = new Map(weights.map((item) => [item.row.id, item.weight]));
+    members.forEach((row) => {
+      const weight = weightById.get(row.id);
+      if (!open || !weight || classRatio == null) {
+        byId.set(row.id, null);
+        return;
+      }
+      const targetWithin = weight / weightSum;
+      const assetRatio = classValue > 0 ? (row.value / classValue) / targetWithin : 0;
+      byId.set(row.id, {
+        priority: classRatio ** 0.7 * assetRatio ** 0.3,
+        classRatio,
+        assetRatio,
+      });
+    });
+  });
+  return rows.map((row) => byId.get(row.id) || null);
+}
+
+function formatDeficit(priority) {
+  return `${((1 - priority) * 100).toFixed(1)}%`;
+}
+
+function syncPriority() {
+  if (!state.list) return;
+  const holdings = state.list.assets.map((asset) => ({
+    id: assetKey(asset),
+    classId: CLASS_BY_TYPE[asset.type] || null,
+    score: assetScore(asset),
+    value: marketValue(asset),
+  }));
+  const results = priorityForHoldings(holdings, currentAllocation());
+  let best = Infinity;
+  results.forEach((entry) => {
+    if (entry && entry.priority < best) best = entry.priority;
+  });
+  state.list.assets.forEach((asset, index) => {
+    const box = document.querySelector(`[data-priority-for="${CSS.escape(assetKey(asset))}"]`);
+    if (!box) return;
+    const entry = results[index];
+    const indexEl = box.querySelector(".priority__index");
+    box.classList.remove("is-top", "is-under", "is-over", "is-met", "is-empty");
+    if (!entry || !Number.isFinite(entry.priority)) {
+      box.classList.add("is-empty");
+      indexEl.textContent = "—";
+      box.title = "Set this class above 0% in Allocation. A grade of 0 is left out.";
+      box.setAttribute("aria-label", `No allocation deficit for ${asset.symbol}`);
+      return;
+    }
+    const deficit = (1 - entry.priority) * 100;
+    const text = formatDeficit(entry.priority);
+    indexEl.textContent = text;
+    const top = entry.priority === best;
+    if (top) box.classList.add("is-top");
+    else if (deficit > 0) box.classList.add("is-under");
+    else if (deficit < 0) box.classList.add("is-over");
+    else box.classList.add("is-met");
+    const amount = `${Math.abs(deficit).toFixed(1)}%`;
+    const detail = deficit > 0 ? `${amount} below its target` : deficit < 0 ? `${amount} above its target` : "At its target";
+    box.title = top ? `Highest contribution priority. ${detail}.` : `${detail}.`;
+    box.setAttribute("aria-label", `${top ? "Highest contribution priority for" : "Allocation deficit for"} ${asset.symbol}. ${detail}.`);
+  });
 }
 
 function totalView() {
@@ -677,6 +806,7 @@ function applyQuotes() {
     price.textContent = view.price;
     if (sub) sub.textContent = view.native;
   }
+  syncPriority();
 }
 
 function trashIcon() {
@@ -770,6 +900,7 @@ function assetRow(asset) {
     const trailing = /[.,]$/.test(clean);
     asset.grade = canonicalGrade(trailing ? clean.slice(0, -1) : clean);
     save();
+    syncPriority();
   });
   grade.addEventListener("blur", () => {
     grade.value = asset.grade == null ? "" : String(asset.grade);
@@ -780,7 +911,10 @@ function assetRow(asset) {
   remove.title = "Remove";
   remove.append(trashIcon());
   remove.addEventListener("click", () => removeAsset(asset));
-  actions.append(amount, grade, remove);
+  const priority = el("div", "priority is-empty");
+  priority.setAttribute("data-priority-for", assetKey(asset));
+  priority.append(el("p", "priority__index", "—"));
+  actions.append(amount, grade, priority, remove);
   const holding = el("div", "holding");
   const position = el("p", "position", view.position);
   position.title = "Position";

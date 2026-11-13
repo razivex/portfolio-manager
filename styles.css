@@ -922,6 +922,51 @@ body.values-hidden .amount::placeholder {
 
 .remove:hover { border-color: #e7b4b4; color: #f0b4b4; background: rgba(180, 35, 24, 0.16); }
 
+.priority {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  min-width: 4.5rem;
+  height: 32px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid #2d3a4d;
+  border-radius: 8px;
+  background: #0f1419;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.priority__index {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #9aa7b8;
+}
+
+.priority.is-under {
+  border-color: rgba(13, 78, 184, 0.9);
+  background: rgba(13, 78, 184, 0.22);
+}
+
+.priority.is-under .priority__index { color: #9cc4ff; }
+
+.priority.is-over .priority__index { color: #6d7d90; }
+
+.priority.is-met .priority__index { color: #e7e9ea; }
+
+.priority.is-top {
+  border-color: #9cc4ff;
+  background: rgba(13, 78, 184, 0.45);
+}
+
+.priority.is-top .priority__index { color: #d6e6ff; }
+
+.priority.is-empty .priority__index { color: #7f8fa3; }
+
 dialog {
   border: 0;
   padding: 0;
@@ -994,11 +1039,11 @@ dialog::backdrop { background: rgba(4, 16, 40, 0.62); }
 @media (max-width: 720px) {
   .nav { padding: 0 12px 0 4px; }
   .asset {
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto auto;
     grid-template-areas:
-      "identity identity identity identity"
-      "quote quote quote quote"
-      "position amount grade trash";
+      "identity identity identity identity identity"
+      "quote quote quote quote quote"
+      "position amount grade priority trash";
     gap: 6px 8px;
   }
   .identity { grid-area: identity; }
@@ -1007,7 +1052,20 @@ dialog::backdrop { background: rgba(4, 16, 40, 0.62); }
   .position { grid-area: position; }
   .amount { grid-area: amount; width: 5.25rem; min-width: 5.25rem; max-width: 5.25rem; justify-self: end; }
   .grade { grid-area: grade; width: 2.9rem; min-width: 2.9rem; max-width: 2.9rem; justify-self: end; }
+  .priority { grid-area: priority; justify-self: end; }
   .remove { grid-area: trash; }
+}
+
+@media (max-width: 480px) {
+  .asset {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-areas:
+      "identity identity identity identity"
+      "quote quote quote quote"
+      "position position position position"
+      "amount grade priority trash";
+  }
+  .position { justify-self: end; }
 }
 
 @media (max-width: 640px) {
