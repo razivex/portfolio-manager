@@ -531,48 +531,157 @@ function priorityForHoldings(holdings, targets) {
 }
 
 function formatDeficit(priority) {
-  return `${((1 - priority) * 100).toFixed(1)}%`;
+  const rounded = ((priority - 1) * 100).toFixed(1);
+  if (rounded === "0.0" || rounded === "-0.0") return "0.0%";
+  return rounded.startsWith("-") ? `${rounded}%` : `+${rounded}%`;
 }
 
-function syncPriority() {
-  if (!state.list) return;
-  const holdings = state.list.assets.map((asset) => ({
+function holdingInputs() {
+  return state.list.assets.map((asset) => ({
     id: assetKey(asset),
     classId: CLASS_BY_TYPE[asset.type] || null,
     score: assetScore(asset),
     value: marketValue(asset),
   }));
-  const results = priorityForHoldings(holdings, currentAllocation());
+}
+
+function rankHoldings() {
+  const results = priorityForHoldings(holdingInputs(), currentAllocation());
+  const ranked = state.list.assets.map((asset, index) => ({ asset, entry: results[index], index }));
+  ranked.sort((left, right) => {
+    const a = left.entry && Number.isFinite(left.entry.priority) ? (left.entry.priority - 1) * 100 : null;
+    const b = right.entry && Number.isFinite(right.entry.priority) ? (right.entry.priority - 1) * 100 : null;
+    if (a == null && b == null) return left.index - right.index;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    if (a !== b) return a - b;
+    return left.index - right.index;
+  });
+  state.list.assets = ranked.map((item) => item.asset);
+  return ranked;
+}
+
+function paintDeficit(asset, entry, best) {
+  const box = document.querySelector(`[data-priority-for="${CSS.escape(assetKey(asset))}"]`);
+  if (!box) return;
+  const indexEl = box.querySelector(".priority__index");
+  box.classList.remove("is-top", "is-under", "is-over", "is-met", "is-empty");
+  if (!entry || !Number.isFinite(entry.priority)) {
+    box.classList.add("is-empty");
+    indexEl.textContent = "—";
+    box.title = "Set this class above 0% in Allocation. A grade of 0 is left out.";
+    box.setAttribute("aria-label", `No allocation deficit for ${asset.symbol}`);
+    return;
+  }
+  const deficit = (entry.priority - 1) * 100;
+  indexEl.textContent = formatDeficit(entry.priority);
+  const top = entry.priority === best;
+  if (top) box.classList.add("is-top");
+  else if (deficit < 0) box.classList.add("is-under");
+  else if (deficit > 0) box.classList.add("is-over");
+  else box.classList.add("is-met");
+  const amount = `${Math.abs(deficit).toFixed(1)}%`;
+  const detail = deficit < 0 ? `${amount} below its target` : deficit > 0 ? `${amount} above its target` : "At its target";
+  box.title = top ? `Highest contribution priority. ${detail}.` : `${detail}.`;
+  box.setAttribute("aria-label", `${top ? "Highest contribution priority for" : "Allocation deficit for"} ${asset.symbol}. ${detail}.`);
+}
+
+const DEFICIT_MOVE_MS = 960;
+const DEFICIT_MOVE_SETTLE_MS = 1120;
+const deficitMoveTimers = new WeakMap();
+let deficitMoveSeq = 0;
+let deficitSortPending = false;
+let deficitPointerInList = false;
+
+function settleDeficitRow(row) {
+  const timer = deficitMoveTimers.get(row);
+  if (timer) window.clearTimeout(timer);
+  deficitMoveTimers.delete(row);
+  row.style.transition = "";
+  row.style.transform = "";
+  row.classList.remove("is-moving");
+}
+
+function moveDeficitRows(list, ranked) {
+  const rows = new Map();
+  list.querySelectorAll(":scope > .asset").forEach((row) => {
+    const key = row.querySelector("[data-priority-for]")?.getAttribute("data-priority-for");
+    if (key) rows.set(key, row);
+  });
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  rows.forEach((row) => {
+    const timer = deficitMoveTimers.get(row);
+    if (timer) window.clearTimeout(timer);
+    deficitMoveTimers.delete(row);
+    row.style.transition = "none";
+    row.style.transform = "";
+    row.classList.remove("is-moving");
+  });
+  if (reduced) {
+    ranked.forEach((item) => {
+      const row = rows.get(assetKey(item.asset));
+      if (row) list.append(row);
+    });
+    return;
+  }
+  const before = new Map();
+  rows.forEach((row) => before.set(row, row.getBoundingClientRect().top));
+  ranked.forEach((item) => {
+    const row = rows.get(assetKey(item.asset));
+    if (row) list.append(row);
+  });
+  const moving = [];
+  rows.forEach((row) => {
+    const dy = before.get(row) - row.getBoundingClientRect().top;
+    if (Math.abs(dy) < 1) return;
+    row.classList.add("is-moving");
+    row.style.transition = "none";
+    row.style.transform = `translateY(${dy}px)`;
+    moving.push(row);
+  });
+  if (!moving.length) return;
+  const moveId = String(++deficitMoveSeq);
+  list.getBoundingClientRect();
+  moving.forEach((row) => {
+    row.dataset.moveId = moveId;
+    row.style.transition = `transform ${DEFICIT_MOVE_MS}ms cubic-bezier(0.22, 0.8, 0.32, 1)`;
+    row.style.transform = "translateY(0)";
+    const done = (event) => {
+      if (event.propertyName !== "transform" || row.dataset.moveId !== moveId) return;
+      row.removeEventListener("transitionend", done);
+      settleDeficitRow(row);
+    };
+    row.addEventListener("transitionend", done);
+    deficitMoveTimers.set(row, window.setTimeout(() => {
+      if (row.dataset.moveId === moveId) settleDeficitRow(row);
+    }, DEFICIT_MOVE_SETTLE_MS));
+  });
+}
+
+function syncPriority(options) {
+  if (!state.list) return;
+  const force = !!(options && options.force);
+  const sort = force || ((!options || options.sort !== false) && !deficitSortPending);
+  if (!sort) {
+    const results = priorityForHoldings(holdingInputs(), currentAllocation());
+    let best = Infinity;
+    results.forEach((entry) => {
+      if (entry && entry.priority < best) best = entry.priority;
+    });
+    state.list.assets.forEach((asset, index) => paintDeficit(asset, results[index], best));
+    return;
+  }
+  deficitSortPending = false;
+  const before = state.list.assets.map((asset) => assetKey(asset));
+  const ranked = rankHoldings();
   let best = Infinity;
-  results.forEach((entry) => {
-    if (entry && entry.priority < best) best = entry.priority;
+  ranked.forEach((item) => {
+    if (item.entry && item.entry.priority < best) best = item.entry.priority;
   });
-  state.list.assets.forEach((asset, index) => {
-    const box = document.querySelector(`[data-priority-for="${CSS.escape(assetKey(asset))}"]`);
-    if (!box) return;
-    const entry = results[index];
-    const indexEl = box.querySelector(".priority__index");
-    box.classList.remove("is-top", "is-under", "is-over", "is-met", "is-empty");
-    if (!entry || !Number.isFinite(entry.priority)) {
-      box.classList.add("is-empty");
-      indexEl.textContent = "—";
-      box.title = "Set this class above 0% in Allocation. A grade of 0 is left out.";
-      box.setAttribute("aria-label", `No allocation deficit for ${asset.symbol}`);
-      return;
-    }
-    const deficit = (1 - entry.priority) * 100;
-    const text = formatDeficit(entry.priority);
-    indexEl.textContent = text;
-    const top = entry.priority === best;
-    if (top) box.classList.add("is-top");
-    else if (deficit > 0) box.classList.add("is-under");
-    else if (deficit < 0) box.classList.add("is-over");
-    else box.classList.add("is-met");
-    const amount = `${Math.abs(deficit).toFixed(1)}%`;
-    const detail = deficit > 0 ? `${amount} below its target` : deficit < 0 ? `${amount} above its target` : "At its target";
-    box.title = top ? `Highest contribution priority. ${detail}.` : `${detail}.`;
-    box.setAttribute("aria-label", `${top ? "Highest contribution priority for" : "Allocation deficit for"} ${asset.symbol}. ${detail}.`);
-  });
+  ranked.forEach((item) => paintDeficit(item.asset, item.entry, best));
+  const list = document.querySelector(".assets");
+  const changed = ranked.some((item, index) => assetKey(item.asset) !== before[index]);
+  if (list && changed) moveDeficitRows(list, ranked);
 }
 
 function totalView() {
@@ -784,7 +893,7 @@ function paintTotal(el, view) {
   else delete el.dataset.totalValue;
 }
 
-function applyQuotes() {
+function applyQuotes(options) {
   if (!state.list) return;
   const note = document.querySelector("#price-note");
   if (note) paintTotal(note, totalView());
@@ -806,7 +915,7 @@ function applyQuotes() {
     price.textContent = view.price;
     if (sub) sub.textContent = view.native;
   }
-  syncPriority();
+  syncPriority(options);
 }
 
 function trashIcon() {
@@ -830,6 +939,31 @@ function shortName(name) {
   const last = words.length - 1;
   words[last] = (words[last].match(/^[\p{L}\p{N}]+/u) || [""])[0];
   return words.filter(Boolean).join(" ");
+}
+
+function moveHoldingField(field, shift) {
+  const list = field.closest(".assets");
+  if (!list) return;
+  const selector = field.classList.contains("grade") ? ".grade" : ".amount";
+  const fields = [...list.querySelectorAll(`.asset ${selector}`)];
+  const index = fields.indexOf(field);
+  if (index < 0 || fields.length === 0) return;
+  const next = fields[(index + (shift ? -1 : 1) + fields.length) % fields.length];
+  next.focus();
+}
+
+function bindHoldingKeys(field) {
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      field.blur();
+      syncPriority({ force: true });
+      return;
+    }
+    if (event.key !== "Tab") return;
+    event.preventDefault();
+    moveHoldingField(field, event.shiftKey);
+  });
 }
 
 function assetRow(asset) {
@@ -872,12 +1006,14 @@ function assetRow(asset) {
     }
     const trailing = /[.,]$/.test(clean);
     asset.amount = canonicalAmount(trailing ? clean.slice(0, -1) : clean);
+    deficitSortPending = true;
     save();
-    applyQuotes();
+    applyQuotes({ sort: false });
   });
   amount.addEventListener("blur", () => {
     amount.value = asset.amount == null ? "" : String(asset.amount);
   });
+  bindHoldingKeys(amount);
   const grade = document.createElement("input");
   grade.className = "grade";
   grade.type = "text";
@@ -899,12 +1035,14 @@ function assetRow(asset) {
     }
     const trailing = /[.,]$/.test(clean);
     asset.grade = canonicalGrade(trailing ? clean.slice(0, -1) : clean);
+    deficitSortPending = true;
     save();
-    syncPriority();
+    syncPriority({ sort: false });
   });
   grade.addEventListener("blur", () => {
     grade.value = asset.grade == null ? "" : String(asset.grade);
   });
+  bindHoldingKeys(grade);
   const remove = el("button", "remove");
   remove.type = "button";
   remove.setAttribute("aria-label", `Remove ${asset.symbol}`);
@@ -939,6 +1077,7 @@ function renderGate() {
 }
 
 function renderList() {
+  deficitSortPending = false;
   const main = document.querySelector("#app");
   const board = el("section", "board");
   const head = el("div", "board-head");
@@ -954,6 +1093,7 @@ function renderList() {
     empty.append(el("p", null, "This list has no assets yet."), add);
     panel.append(empty);
   } else {
+    rankHoldings();
     const list = el("ul", "assets");
     state.list.assets.forEach((asset) => list.append(assetRow(asset)));
     panel.append(list);
@@ -1615,6 +1755,25 @@ window.addEventListener("resize", () => {
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && state.list) refreshPrices();
+});
+
+document.addEventListener("pointerdown", (event) => {
+  const list = document.querySelector(".assets");
+  deficitPointerInList = !!(list && list.contains(event.target));
+  if (!deficitSortPending || deficitPointerInList) return;
+  syncPriority({ force: true });
+});
+
+document.addEventListener("focusout", (event) => {
+  const pointerInList = deficitPointerInList;
+  deficitPointerInList = false;
+  if (!deficitSortPending) return;
+  const list = document.querySelector(".assets");
+  if (!list || !list.contains(event.target)) return;
+  const next = event.relatedTarget;
+  if (next && list.contains(next)) return;
+  if (!next && pointerInList) return;
+  syncPriority({ force: true });
 });
 
 state.list = loadList();

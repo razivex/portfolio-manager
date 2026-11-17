@@ -732,6 +732,13 @@ input.allocation-menu__value {
 
 .asset:last-child { border-bottom: 0; }
 
+.asset.is-moving {
+  position: relative;
+  z-index: 2;
+  background: #1a2332;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
 .identity { gap: 12px; min-width: 0; }
 .who {
   display: flex;
