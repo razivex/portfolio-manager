@@ -35,6 +35,7 @@ const CLASS_BY_TYPE = {
 const SETTINGS_PANELS = {
   currency: "settingsPanelCurrency",
   allocation: "settingsPanelAllocation",
+  backup: "settingsPanelBackup",
 };
 
 const state = {
@@ -503,35 +504,28 @@ function priorityForHoldings(holdings, targets) {
   grouped.forEach((members, classId) => {
     const targetPercent = Number(targets && targets[classId]);
     const targetFraction = Number.isFinite(targetPercent) && targetPercent > 0 ? targetPercent / 100 : 0;
-    const positive = members.filter((row) => row.score > 0);
-    const weights = positive.length
-      ? positive.map((row) => ({ row, weight: row.score }))
-      : members.filter((row) => row.score == null).map((row) => ({ row, weight: 1 }));
-    const weightSum = weights.reduce((sum, item) => sum + item.weight, 0);
-    const open = targetFraction > 0 && weightSum > 0;
     const classValue = members.reduce((sum, row) => sum + row.value, 0);
-    const classRatio = open ? (portfolioValue > 0 ? classValue / portfolioValue : 0) / targetFraction : null;
-    const weightById = new Map(weights.map((item) => [item.row.id, item.weight]));
+    const currentClass = portfolioValue > 0 ? classValue / portfolioValue : 0;
+    const classRatio = targetFraction > 0 ? currentClass / targetFraction : null;
+    const eligible = members.filter((row) => row.score > 0);
+    const gradeSum = eligible.reduce((sum, row) => sum + row.score, 0);
     members.forEach((row) => {
-      const weight = weightById.get(row.id);
-      if (!open || !weight || classRatio == null) {
+      if (classRatio == null || !(row.score > 0) || gradeSum <= 0) {
         byId.set(row.id, null);
         return;
       }
-      const targetWithin = weight / weightSum;
-      const assetRatio = classValue > 0 ? (row.value / classValue) / targetWithin : 0;
-      byId.set(row.id, {
-        priority: classRatio ** 0.7 * assetRatio ** 0.3,
-        classRatio,
-        assetRatio,
-      });
+      const targetWithin = row.score / gradeSum;
+      const currentWithin = classValue > 0 ? row.value / classValue : 0;
+      const assetRatio = currentWithin / targetWithin;
+      const priority = Math.max(0, classRatio ** 0.7 * assetRatio ** 0.3);
+      byId.set(row.id, { priority, classRatio, assetRatio });
     });
   });
   return rows.map((row) => byId.get(row.id) || null);
 }
 
 function formatDeficit(priority) {
-  const rounded = ((priority - 1) * 100).toFixed(1);
+  const rounded = Math.max(-100, (priority - 1) * 100).toFixed(1);
   if (rounded === "0.0" || rounded === "-0.0") return "0.0%";
   return rounded.startsWith("-") ? `${rounded}%` : `+${rounded}%`;
 }
@@ -569,7 +563,7 @@ function paintDeficit(asset, entry, best) {
   if (!entry || !Number.isFinite(entry.priority)) {
     box.classList.add("is-empty");
     indexEl.textContent = "—";
-    box.title = "Set this class above 0% in Allocation. A grade of 0 is left out.";
+    box.title = "Set this class above 0% in Allocation and this grade above 0.";
     box.setAttribute("aria-label", `No allocation deficit for ${asset.symbol}`);
     return;
   }
@@ -1670,6 +1664,127 @@ function applyValueVisibility() {
 valuesToggle.addEventListener("click", () => {
   state.valuesHidden = !state.valuesHidden;
   applyValueVisibility();
+});
+
+function setBackupStatus(message) {
+  const status = document.querySelector("#backupStatus");
+  if (status) status.textContent = message || "";
+}
+
+function backupPayload(date = new Date()) {
+  const assets = (state.list ? state.list.assets : []).map((asset) => ({
+    symbol: asset.symbol,
+    name: asset.name,
+    type: asset.type,
+    currency: asset.currency || null,
+    tv: asset.tv || null,
+    coinId: asset.coinId || null,
+    amount: asset.amount == null ? null : String(asset.amount),
+    grade: asset.grade == null ? null : String(asset.grade),
+  }));
+  return {
+    version: 1,
+    backedUpAt: date.toISOString(),
+    currency: currentCurrency(),
+    allocation: canonicalAllocation(currentAllocation()),
+    assets,
+  };
+}
+
+function backupFileName(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `portfolio-manager-backup-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}.json`;
+}
+
+function exportBackup() {
+  const date = new Date();
+  const payload = backupPayload(date);
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = backupFileName(date);
+  link.rel = "noopener";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  setBackupStatus("Backup saved.");
+  return payload;
+}
+
+function portfolioFromBackup(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  if (data.version != null && Number(data.version) !== 1) return null;
+  if (!CURRENCIES.includes(data.currency)) return null;
+  if (!Array.isArray(data.assets)) return null;
+  const assets = [];
+  for (const asset of data.assets) {
+    if (!asset || !asset.symbol || !TYPE_LABEL[asset.type]) return null;
+    assets.push(normalizeAsset(asset));
+  }
+  const createdAt = typeof data.createdAt === "string" && !Number.isNaN(new Date(data.createdAt).getTime())
+    ? data.createdAt
+    : (state.list && state.list.createdAt) || new Date().toISOString();
+  return {
+    version: 1,
+    createdAt,
+    currency: data.currency,
+    allocation: canonicalAllocation(data.allocation),
+    assets,
+  };
+}
+
+function applyBackup(data) {
+  const next = portfolioFromBackup(data);
+  if (!next) return false;
+  state.list = next;
+  state.draftCurrency = next.currency;
+  state.draftAllocation = canonicalAllocation(next.allocation);
+  state.brokenCache = false;
+  save();
+  render();
+  syncAllocation();
+  return true;
+}
+
+function importBackupText(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return "invalid";
+  }
+  if (!portfolioFromBackup(data)) return "invalid";
+  if (state.list && !window.confirm("Replace the current portfolio with this backup?")) return "cancelled";
+  return applyBackup(data) ? "imported" : "invalid";
+}
+
+document.querySelector("#backupExport").addEventListener("click", (event) => {
+  event.stopPropagation();
+  exportBackup();
+});
+
+document.querySelector("#backupImport").addEventListener("click", (event) => {
+  event.stopPropagation();
+  const input = document.querySelector("#backupFile");
+  input.value = "";
+  input.click();
+});
+
+document.querySelector("#backupFile").addEventListener("change", () => {
+  const input = document.querySelector("#backupFile");
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
+    const result = importBackupText(String(reader.result || ""));
+    if (result === "imported") setBackupStatus("Backup imported.");
+    else if (result === "cancelled") setBackupStatus("Import cancelled.");
+    else setBackupStatus("That file is not a portfolio backup.");
+  });
+  reader.addEventListener("error", () => setBackupStatus("That file is not a portfolio backup."));
+  reader.readAsText(file);
 });
 
 settingsToggle.addEventListener("click", () => {

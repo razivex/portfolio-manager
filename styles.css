@@ -464,7 +464,44 @@ body.settings-open { overflow: hidden; }
   color: #9aa7b8;
 }
 
-.allocation-menu__option { cursor: default; }
+.allocation-menu__option,
+.backup-menu__option { cursor: default; }
+
+.backup-menu__option:hover,
+.backup-menu__option:focus { background: transparent; }
+
+.backup-menu__button {
+  flex: none;
+  height: 22px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid #0d4eb8;
+  border-radius: 999px;
+  background: #0d4eb8;
+  color: #e7e9ea;
+  font-family: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.backup-menu__button:hover,
+.backup-menu__button:focus {
+  background: #0b429c;
+  border-color: #0b429c;
+  outline: none;
+}
+
+.backup-menu__status {
+  margin: 0;
+  padding: 0 14px 12px;
+  min-height: 1.2em;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: #9aa7b8;
+}
 
 .allocation-menu__value {
   flex: none;

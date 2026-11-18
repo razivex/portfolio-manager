@@ -102,6 +102,17 @@
           >
             <span class="settings-menu__label">Allocation</span>
           </button>
+          <button
+            id="settingsNavBackup"
+            class="settings-menu__nav-item"
+            type="button"
+            role="tab"
+            data-settings-panel="backup"
+            aria-selected="false"
+            aria-controls="settingsPanelBackup"
+          >
+            <span class="settings-menu__label">Backup</span>
+          </button>
         </nav>
         <div class="settings-menu__panels">
           <section
@@ -208,6 +219,32 @@
                 </div>
               </div>
             </div>
+          </section>
+          <section
+            id="settingsPanelBackup"
+            class="settings-menu__panel"
+            role="tabpanel"
+            aria-labelledby="settingsNavBackup"
+            hidden
+          >
+            <div id="backupMenu" class="notifications-menu backup-menu" role="group" aria-label="Backup">
+              <div class="notifications-menu__option backup-menu__option">
+                <span class="notifications-menu__header">
+                  <span class="notifications-menu__label">Export backup</span>
+                  <button id="backupExport" class="backup-menu__button" type="button">Export</button>
+                </span>
+                <span class="notifications-menu__desc">Save currency, allocation, and each holding's amount and grade.</span>
+              </div>
+              <div class="notifications-menu__option backup-menu__option">
+                <span class="notifications-menu__header">
+                  <span class="notifications-menu__label">Import backup</span>
+                  <button id="backupImport" class="backup-menu__button" type="button">Import</button>
+                </span>
+                <span class="notifications-menu__desc">Replace the portfolio with a backup file.</span>
+              </div>
+              <p id="backupStatus" class="backup-menu__status" role="status"></p>
+            </div>
+            <input id="backupFile" type="file" accept="application/json,.json" hidden />
           </section>
         </div>
       </div>
