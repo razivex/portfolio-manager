@@ -32,6 +32,25 @@ const CLASS_BY_TYPE = {
   "br-fii": "br-fii",
   crypto: "crypto",
 };
+const CLASS_LABEL = {
+  "us-stock": "US Stocks",
+  "us-etf": "US ETFs",
+  "us-reit": "US REITs",
+  "br-stock": "BR Stocks",
+  "br-etf": "BR ETFs",
+  "br-fii": "BR FIIs",
+  crypto: "Crypto",
+};
+const CLASS_COLOR = {
+  "us-stock": "#0d4eb8",
+  "us-etf": "#3d7ad6",
+  "us-reit": "#1f7a4d",
+  "br-stock": "#5b4d8a",
+  "br-etf": "#8f7cc4",
+  "br-fii": "#1f6f8a",
+  crypto: "#c4b6e0",
+};
+const ASSET_COLORS = ["#0d4eb8", "#1f7a4d", "#5b4d8a", "#3d7ad6", "#2a9a8a", "#9ec0f0", "#8fbfa3", "#c4b6e0", "#1f6f8a", "#7a6bb5", "#4d8fbf", "#3d6b4f"];
 const SETTINGS_PANELS = {
   currency: "settingsPanelCurrency",
   allocation: "settingsPanelAllocation",
@@ -50,6 +69,7 @@ const state = {
   valuesHidden: false,
   draftAllocation: defaultAllocation(),
   settingsPanel: "currency",
+  view: "list",
 };
 
 const dialog = document.querySelector("#search-dialog");
@@ -889,10 +909,14 @@ function paintTotal(el, view) {
 
 function applyQuotes(options) {
   if (!state.list) return;
-  const note = document.querySelector("#price-note");
-  if (note) paintTotal(note, totalView());
   const updated = document.querySelector("#updated-at");
   if (updated) updated.textContent = formatUpdatedAt(state.updatedAt);
+  const note = document.querySelector("#price-note");
+  if (note) paintTotal(note, totalView());
+  if (state.view === "dashboard") {
+    paintDashboard();
+    return;
+  }
   for (const asset of state.list.assets) {
     const key = CSS.escape(assetKey(asset));
     const position = document.querySelector(`[data-position-for="${key}"]`);
@@ -1070,14 +1094,19 @@ function renderGate() {
   document.querySelector("#nav-add").hidden = true;
 }
 
-function renderList() {
-  deficitSortPending = false;
-  const main = document.querySelector("#app");
-  const board = el("section", "board");
+function totalCard() {
   const head = el("div", "board-head");
   const note = el("p", "total");
   note.id = "price-note";
   head.append(note);
+  return head;
+}
+
+function renderList() {
+  deficitSortPending = false;
+  const main = document.querySelector("#app");
+  const board = el("section", "board");
+  const head = totalCard();
   const panel = el("div", "panel");
   if (state.list.assets.length === 0) {
     const empty = el("div", "empty");
@@ -1099,9 +1128,168 @@ function renderList() {
   applyQuotes();
 }
 
+function svgEl(tag) {
+  return document.createElementNS("http://www.w3.org/2000/svg", tag);
+}
+
+function shareLabel(share) {
+  const pct = share * 100;
+  const rounded = pct.toFixed(1);
+  if (rounded === "0.0" && pct > 0) return "<0.1%";
+  return `${rounded}%`;
+}
+
+function assetChartLabel(asset) {
+  const name = shortName(asset.name);
+  const symbol = String(asset.symbol || "").toUpperCase();
+  if (!name || name.toUpperCase() === symbol) return symbol;
+  return `${name} (${symbol})`;
+}
+
+function portfolioSlices() {
+  const rows = state.list.assets.map((asset, index) => ({
+    asset,
+    index,
+    value: marketValue(asset),
+  })).filter((row) => row.value > 0);
+  const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const classValue = new Map();
+  rows.forEach((row) => {
+    const id = CLASS_BY_TYPE[row.asset.type];
+    if (!id) return;
+    classValue.set(id, (classValue.get(id) || 0) + row.value);
+  });
+  const classes = ALLOCATION_IDS
+    .map((id, order) => ({ id, order, value: classValue.get(id) || 0 }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value || a.order - b.order)
+    .map((item) => ({
+      label: CLASS_LABEL[item.id],
+      color: CLASS_COLOR[item.id],
+      share: total > 0 ? item.value / total : 0,
+    }));
+  const assets = rows
+    .slice()
+    .sort((a, b) => b.value - a.value || a.index - b.index)
+    .map((row, index) => ({
+      label: assetChartLabel(row.asset),
+      color: ASSET_COLORS[index % ASSET_COLORS.length],
+      share: total > 0 ? row.value / total : 0,
+    }));
+  return { total, classes, assets };
+}
+
+function pieSvg(slices) {
+  const svg = svgEl("svg");
+  svg.setAttribute("class", "pie");
+  svg.setAttribute("viewBox", "0 0 120 120");
+  svg.setAttribute("aria-hidden", "true");
+  if (slices.length === 1) {
+    const circle = svgEl("circle");
+    circle.setAttribute("cx", "60");
+    circle.setAttribute("cy", "60");
+    circle.setAttribute("r", "52");
+    circle.setAttribute("fill", slices[0].color);
+    svg.append(circle);
+    return svg;
+  }
+  const cx = 60;
+  const cy = 60;
+  const radius = 52;
+  let angle = -Math.PI / 2;
+  const turn = Math.PI * 2;
+  slices.forEach((slice, index) => {
+    const start = angle;
+    const end = index === slices.length - 1 ? -Math.PI / 2 + turn : angle + slice.share * turn;
+    angle = end;
+    const sweep = end - start;
+    if (sweep <= 0) return;
+    const [x1, y1] = [cx + radius * Math.cos(start), cy + radius * Math.sin(start)];
+    const [x2, y2] = [cx + radius * Math.cos(end), cy + radius * Math.sin(end)];
+    const path = svgEl("path");
+    path.setAttribute("d", `M ${cx} ${cy} L ${x1.toFixed(3)} ${y1.toFixed(3)} A ${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x2.toFixed(3)} ${y2.toFixed(3)} Z`);
+    path.setAttribute("fill", slice.color);
+    path.setAttribute("stroke", slice.color);
+    path.setAttribute("stroke-width", "0.6");
+    const title = svgEl("title");
+    title.textContent = `${slice.label} ${shareLabel(slice.share)}`;
+    path.append(title);
+    svg.append(path);
+  });
+  return svg;
+}
+
+function paintChart(kind, slices, total) {
+  const body = document.querySelector(`.chart-card[data-chart="${kind}"] .chart-body`);
+  if (!body) return;
+  body.replaceChildren();
+  if (!(total > 0) || !slices.length) {
+    body.append(el("p", "chart-empty", "Add an amount to a holding with a price."));
+    return;
+  }
+  const layout = el("div", "chart-layout");
+  layout.append(pieSvg(slices));
+  const legend = el("ul", "chart-legend");
+  slices.forEach((slice) => {
+    const item = el("li");
+    const swatch = el("span", "chart-swatch");
+    swatch.style.background = slice.color;
+    item.append(swatch, el("span", "chart-name", slice.label), el("span", "chart-share", shareLabel(slice.share)));
+    legend.append(item);
+  });
+  layout.append(legend);
+  body.append(layout);
+}
+
+function paintDashboard() {
+  if (!state.list || state.view !== "dashboard") return;
+  const data = portfolioSlices();
+  paintChart("class", data.classes, data.total);
+  paintChart("asset", data.assets, data.total);
+}
+
+function chartCard(kind, title) {
+  const card = el("article", "chart-card");
+  card.dataset.chart = kind;
+  card.append(el("h2", null, title), el("div", "chart-body"));
+  return card;
+}
+
+function renderDashboard() {
+  const main = document.querySelector("#app");
+  const board = el("section", "board dashboard");
+  const grid = el("div", "dashboard-grid");
+  grid.append(chartCard("class", "Portfolio by class"), chartCard("asset", "Portfolio by asset"));
+  board.append(totalCard(), grid);
+  main.replaceChildren(board);
+  document.querySelector("#nav-add").hidden = false;
+  applyQuotes();
+}
+
+function syncViewBar() {
+  const bar = document.querySelector("#view-bar");
+  const portfolio = document.querySelector("#view-portfolio");
+  const dashboard = document.querySelector("#view-dashboard");
+  bar.hidden = !state.list;
+  const onDashboard = state.view === "dashboard" && !!state.list;
+  portfolio.setAttribute("aria-selected", String(!onDashboard));
+  dashboard.setAttribute("aria-selected", String(onDashboard));
+}
+
+function setView(view) {
+  if (!state.list) return;
+  const next = view === "dashboard" ? "dashboard" : "list";
+  if (state.view === next) return;
+  state.view = next;
+  render();
+}
+
 function render() {
-  if (state.list) renderList();
-  else renderGate();
+  if (!state.list) state.view = "list";
+  syncViewBar();
+  if (!state.list) renderGate();
+  else if (state.view === "dashboard") renderDashboard();
+  else renderList();
   syncCurrency();
 }
 
@@ -1890,6 +2078,9 @@ document.addEventListener("focusout", (event) => {
   if (!next && pointerInList) return;
   syncPriority({ force: true });
 });
+
+document.querySelector("#view-portfolio").addEventListener("click", () => setView("list"));
+document.querySelector("#view-dashboard").addEventListener("click", () => setView("dashboard"));
 
 state.list = loadList();
 state.valuesHidden = loadValuesHidden();
