@@ -25,14 +25,17 @@ button, input { font: inherit; }
   position: sticky;
   top: 0;
   z-index: 50;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
   align-items: center;
-  justify-content: space-between;
   height: 52px;
   padding: 0 16px 0 4px;
   color: white;
   background: #1a2332;
-  border-bottom: 1px solid #2d3a4d;
+  background-image: linear-gradient(#2d3a4d, #2d3a4d);
+  background-size: 100% 1px;
+  background-position: bottom;
+  background-repeat: no-repeat;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
@@ -41,7 +44,9 @@ button, input { font: inherit; }
   align-items: center;
 }
 
-.nav-left, .nav-actions { gap: 8px; min-width: 0; }
+.nav-left, .nav-actions { gap: 8px; min-width: max-content; }
+.nav-left { grid-column: 1; justify-self: start; }
+.nav-actions { grid-column: 3; justify-self: end; }
 
 .nav-logo {
   display: inline-flex;
@@ -116,56 +121,63 @@ button, input { font: inherit; }
 .nav-add[hidden] { display: none !important; }
 
 .view-bar {
-  position: absolute;
-  left: 50%;
-  top: 50%;
+  grid-column: 2;
+  position: relative;
   z-index: 2;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  width: 196px;
+  display: flex;
+  align-items: stretch;
+  justify-self: center;
+  height: 52px;
   margin: 0;
-  padding: 2px;
-  background: #0f1419;
-  border: 1px solid #2d3a4d;
-  border-radius: 10px;
-  transform: translate(-50%, -50%);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  gap: 4px;
 }
 
 .view-bar[hidden] { display: none !important; }
 
 .view-bar__option {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  min-height: 0;
-  height: 32px;
+  gap: 8px;
+  height: 52px;
   margin: 0;
-  padding: 2px 4px 3px;
+  padding: 0 14px;
   border: 0;
-  border-radius: 8px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   appearance: none;
   background: transparent;
   color: #9aa7b8;
-  font-size: 0.58rem;
+  font-size: 0.86rem;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
 }
 
 .view-bar__icon {
-  width: 12px;
-  height: 12px;
+  width: 18px;
+  height: 18px;
   display: block;
+  flex: none;
 }
 
 .view-bar__option:hover { color: #e7e9ea; }
 
 .view-bar__option[aria-selected="true"],
 .view-bar__option[aria-selected="true"]:hover {
-  background: var(--blue);
+  background: transparent;
   color: #fff;
+  border-bottom-color: var(--blue);
+}
+
+.view-bar__option[aria-selected="true"] .view-bar__icon,
+.view-bar__option[aria-selected="true"]:hover .view-bar__icon {
+  color: var(--blue);
 }
 
 .nav-add:hover, .add-main:hover { transform: translateY(-1px); }
@@ -684,6 +696,16 @@ input.allocation-menu__value {
 .board {
   width: min(1104px, calc(100% - 32px));
   margin: 16px auto 56px;
+}
+
+.dash-section + .dash-section { margin-top: 16px; }
+
+.dash-section__title {
+  margin: 0 0 10px;
+  color: #e7e9ea;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .dashboard-grid {
@@ -1258,26 +1280,37 @@ dialog::backdrop { background: rgba(4, 16, 40, 0.62); }
 .result .action { font-weight: 700; font-size: 0.85rem; }
 .exchange { color: var(--muted); font-size: 0.78rem; }
 
-@media (max-width: 640px) {
-  .nav:has(#view-bar:not([hidden])) {
-    height: auto;
-    flex-wrap: wrap;
-    padding-bottom: 8px;
+@media (max-width: 560px) {
+  .nav { column-gap: 4px; }
+
+  .brand { display: none; }
+
+  .nav-left,
+  .nav-actions { gap: 4px; }
+
+  .view-bar { gap: 0; }
+
+  .view-bar__option {
+    gap: 4px;
+    padding: 0 6px;
+    font-size: 0.75rem;
   }
 
-  .nav:has(#view-bar:not([hidden]))::after {
-    content: "";
-    order: 1;
-    flex-basis: 100%;
-    height: 0;
+  .view-bar__icon {
+    width: 16px;
+    height: 16px;
   }
 
-  .nav:has(#view-bar:not([hidden])) .view-bar {
-    position: static;
-    order: 2;
-    width: 168px;
-    margin: 4px auto 0;
-    transform: none;
+  .nav-add {
+    height: 34px;
+    padding: 0 8px;
+    font-size: 0.75rem;
+  }
+
+  .settings-toggle,
+  .values-toggle {
+    width: 34px;
+    height: 34px;
   }
 }
 
@@ -1369,6 +1402,10 @@ dialog::backdrop { background: rgba(4, 16, 40, 0.62); }
 
   .notifications-menu__label { font-size: 0.76rem; }
   .notifications-menu__desc { font-size: 0.66rem; line-height: 1.3; }
+}
+
+@media (max-width: 560px) {
+  .nav { padding: 0 6px 0 2px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

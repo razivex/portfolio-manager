@@ -674,6 +674,10 @@ function moveDeficitRows(list, ranked) {
 
 function syncPriority(options) {
   if (!state.list) return;
+  if (state.view === "dashboard") {
+    paintDashboard();
+    return;
+  }
   const force = !!(options && options.force);
   const sort = force || ((!options || options.sort !== false) && !deficitSortPending);
   if (!sort) {
@@ -1171,12 +1175,65 @@ function portfolioSlices() {
   const assets = rows
     .slice()
     .sort((a, b) => b.value - a.value || a.index - b.index)
-    .map((row, index) => ({
+    .map((row) => ({
       label: assetChartLabel(row.asset),
-      color: ASSET_COLORS[index % ASSET_COLORS.length],
+      color: ASSET_COLORS[row.index % ASSET_COLORS.length],
       share: total > 0 ? row.value / total : 0,
     }));
-  return { total, classes, assets };
+  return { total, classes, assets, classGoals: classGoalSlices(), assetGoals: assetGoalSlices() };
+}
+
+function goalSlices(slices) {
+  const used = slices.reduce((sum, slice) => sum + slice.share, 0);
+  const gap = 1 - used;
+  if (gap > 0.0005) {
+    return slices.concat([{ label: "Unallocated", color: "#3d4b60", share: gap }]);
+  }
+  return slices;
+}
+
+function classGoalSlices() {
+  const allocation = currentAllocation();
+  const slices = ALLOCATION_IDS
+    .map((id, order) => ({ id, order, share: (Number(allocation[id]) || 0) / 100 }))
+    .filter((item) => item.share > 0)
+    .sort((a, b) => b.share - a.share || a.order - b.order)
+    .map((item) => ({
+      label: CLASS_LABEL[item.id],
+      color: CLASS_COLOR[item.id],
+      share: item.share,
+    }));
+  return goalSlices(slices);
+}
+
+function assetGoalSlices() {
+  const allocation = currentAllocation();
+  const grouped = new Map();
+  state.list.assets.forEach((asset, index) => {
+    const classId = CLASS_BY_TYPE[asset.type];
+    if (!classId) return;
+    const grade = Number(asset.grade);
+    const score = Number.isFinite(grade) && grade > 0 ? grade : 0;
+    if (!grouped.has(classId)) grouped.set(classId, []);
+    grouped.get(classId).push({ asset, index, score });
+  });
+  const slices = [];
+  grouped.forEach((members, classId) => {
+    const classShare = (Number(allocation[classId]) || 0) / 100;
+    const gradeSum = members.reduce((sum, member) => sum + member.score, 0);
+    if (!(classShare > 0) || !(gradeSum > 0)) return;
+    members.forEach((member) => {
+      if (!(member.score > 0)) return;
+      slices.push({
+        label: assetChartLabel(member.asset),
+        color: ASSET_COLORS[member.index % ASSET_COLORS.length],
+        share: classShare * (member.score / gradeSum),
+        order: member.index,
+      });
+    });
+  });
+  slices.sort((a, b) => b.share - a.share || a.order - b.order);
+  return goalSlices(slices.map(({ label, color, share }) => ({ label, color, share })));
 }
 
 function pieSvg(slices) {
@@ -1219,12 +1276,13 @@ function pieSvg(slices) {
   return svg;
 }
 
-function paintChart(kind, slices, total) {
+function paintChart(kind, slices, emptyText) {
   const body = document.querySelector(`.chart-card[data-chart="${kind}"] .chart-body`);
   if (!body) return;
   body.replaceChildren();
-  if (!(total > 0) || !slices.length) {
-    body.append(el("p", "chart-empty", "Add an amount to a holding with a price."));
+  const drawn = slices.filter((slice) => slice.label !== "Unallocated");
+  if (!drawn.length) {
+    body.append(el("p", "chart-empty", emptyText));
     return;
   }
   const layout = el("div", "chart-layout");
@@ -1244,8 +1302,10 @@ function paintChart(kind, slices, total) {
 function paintDashboard() {
   if (!state.list || state.view !== "dashboard") return;
   const data = portfolioSlices();
-  paintChart("class", data.classes, data.total);
-  paintChart("asset", data.assets, data.total);
+  paintChart("class-current", data.classes, "Add an amount to a holding with a price.");
+  paintChart("class-goal", data.classGoals, "Set a class target in Allocation.");
+  paintChart("asset-current", data.assets, "Add an amount to a holding with a price.");
+  paintChart("asset-goal", data.assetGoals, "Set a class target and a grade above 0.");
 }
 
 function chartCard(kind, title) {
@@ -1255,12 +1315,22 @@ function chartCard(kind, title) {
   return card;
 }
 
+function dashSection(title, leftKind, leftTitle, rightKind, rightTitle) {
+  const section = el("section", "dash-section");
+  const grid = el("div", "dashboard-grid");
+  grid.append(chartCard(leftKind, leftTitle), chartCard(rightKind, rightTitle));
+  section.append(el("h2", "dash-section__title", title), grid);
+  return section;
+}
+
 function renderDashboard() {
   const main = document.querySelector("#app");
   const board = el("section", "board dashboard");
-  const grid = el("div", "dashboard-grid");
-  grid.append(chartCard("class", "Portfolio by class"), chartCard("asset", "Portfolio by asset"));
-  board.append(totalCard(), grid);
+  board.append(
+    totalCard(),
+    dashSection("Portfolio Classes", "class-goal", "Allocation goal", "class-current", "Current allocation"),
+    dashSection("Portfolio Assets", "asset-goal", "Allocation goal", "asset-current", "Current allocation")
+  );
   main.replaceChildren(board);
   document.querySelector("#nav-add").hidden = false;
   applyQuotes();
